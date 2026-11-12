@@ -177,6 +177,115 @@ describe('clipboard layout snapshot', () => {
         expect(copy.querySelector('details')!.open).toBe(false)
     })
 
+    it('keeps a fixed frame within the article and preserves nested percentage widths', async () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<div style="width:480px;height:160px;padding:12px">Frame</div><div style="width:90%"><div style="width:75%">Nested</div></div>'
+        document.body.append(root)
+        vi.spyOn(root.firstElementChild!, 'getBoundingClientRect').mockReturnValue({ width: 480, height: 160 } as DOMRect)
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
+        const frame = copy.body.firstElementChild!.children[0] as HTMLElement
+        const outer = copy.body.firstElementChild!.children[1] as HTMLElement
+        expect(frame.style.width).toBe('480px')
+        expect(frame.style.height).toBe('auto')
+        expect(frame.style.aspectRatio).toBe('480 / 160')
+        expect(frame.style.maxWidth).toBe('100%')
+        expect(outer.style.width).toBe('90%')
+        expect((outer.firstElementChild as HTMLElement).style.width).toBe('75%')
+    })
+
+    it('writes a fixed text height as a floor so content Arca puts into the flow cannot run over what follows', async () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<div style="height:120px">Panel</div><div style="width:290px;height:170px">Frame</div>'
+        document.body.append(root)
+        vi.spyOn(root.children[1], 'getBoundingClientRect').mockReturnValue({ width: 290, height: 170 } as DOMRect)
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
+        const [panel, frame] = Array.from(copy.body.firstElementChild!.children) as HTMLElement[]
+        expect(panel.style.height).toBe('auto')
+        expect(panel.style.minHeight).toBe('120px')
+        expect(frame.style.aspectRatio).toBe('290 / 170')
+        expect(frame.style.minHeight).toBe('auto')
+    })
+
+    it('carries a class-sized text card after Arca removes the class', async () => {
+        const sheet = document.createElement('style')
+        sheet.textContent = '.copy-card { width: 280px }'
+        document.head.append(sheet)
+        const root = document.createElement('div')
+        root.innerHTML = '<div class="copy-card">Text</div>'
+        document.body.append(root)
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ width: 400 } as DOMRect)
+        vi.spyOn(root.firstElementChild!, 'getBoundingClientRect').mockReturnValue({ width: 280 } as DOMRect)
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
+        const card = copy.body.firstElementChild!.firstElementChild as HTMLElement
+        expect(card.style.width).toBe('280px')
+        expect(card.style.maxWidth).toBe('100%')
+        sheet.remove()
+    })
+
+    it('keeps an explicitly unwrapped row as the author showed it', async () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<div style="display:flex;flex-wrap:nowrap"><div>One</div><div>Two</div></div>'
+        document.body.append(root)
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
+        expect((copy.body.firstElementChild!.firstElementChild as HTMLElement).style.flexWrap).toBe('nowrap')
+    })
+
+    it('restores used auto margins and places a centered absolute child with surviving margins', async () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<div class="auto" style="width:240px"></div><div class="frame" style="width:300px;height:200px"><div class="center" style="position:absolute;left:50%;top:8px;transform:translateX(-50%);width:100px;height:50px"></div></div>'
+        document.body.append(root)
+        const auto = root.querySelector<HTMLElement>('.auto')!
+        const frame = root.querySelector<HTMLElement>('.frame')!
+        const center = root.querySelector<HTMLElement>('.center')!
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 300, height: 200 } as DOMRect)
+        vi.spyOn(auto, 'getBoundingClientRect').mockReturnValue({ left: 30, top: 0, width: 240, height: 50 } as DOMRect)
+        vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 60, width: 300, height: 200 } as DOMRect)
+        vi.spyOn(center, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 68, width: 100, height: 50 } as DOMRect)
+        const realComputed = window.getComputedStyle.bind(window)
+        vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+            const style = realComputed(element, pseudo)
+            if (element !== auto) return style
+            return new Proxy(style, {
+                get(target, property) {
+                    if (property === 'marginLeft' || property === 'marginRight') return '30px'
+                    if (property === 'getPropertyValue') return (name: string) => name === 'margin-left' || name === 'margin-right' ? '30px' : target.getPropertyValue(name)
+                    const value = Reflect.get(target, property, target)
+                    return typeof value === 'function' ? value.bind(target) : value
+                },
+            })
+        })
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
+        const copiedAuto = copy.querySelector('div > div') as HTMLElement
+        const positioned = copy.body.firstElementChild!.children[1].firstElementChild as HTMLElement
+        expect(copiedAuto.style.marginLeft).toBe('auto')
+        expect(copiedAuto.style.marginRight).toBe('auto')
+        expect(positioned.style.marginLeft).toBe('auto')
+        expect(positioned.style.marginRight).toBe('auto')
+        expect(positioned.style.marginTop).toBe('8px')
+        expect(positioned.style.maxWidth).toBe('100%')
+    })
+
+    it('places a first offset child and centers a sole inset child in a fixed frame', async () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<div class="offset-frame" style="width:300px;height:200px"><div class="offset" style="position:absolute;left:20px;top:12px;width:80px;height:40px"></div></div>'
+            + '<div class="inset-frame" style="width:300px;height:200px"><div class="inset" style="position:absolute;inset:0;margin:auto;width:100px;height:50px"></div></div>'
+        document.body.append(root)
+        const offsetFrame = root.querySelector<HTMLElement>('.offset-frame')!
+        const insetFrame = root.querySelector<HTMLElement>('.inset-frame')!
+        const offset = root.querySelector<HTMLElement>('.offset')!
+        const inset = root.querySelector<HTMLElement>('.inset')!
+        vi.spyOn(offsetFrame, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 300, height: 200 } as DOMRect)
+        vi.spyOn(insetFrame, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 200, width: 300, height: 200 } as DOMRect)
+        vi.spyOn(offset, 'getBoundingClientRect').mockReturnValue({ left: 20, top: 12, width: 80, height: 40 } as DOMRect)
+        vi.spyOn(inset, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 275, width: 100, height: 50 } as DOMRect)
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
+        const [copiedOffsetFrame, copiedInsetFrame] = Array.from(copy.body.firstElementChild!.children) as HTMLElement[]
+        expect((copiedOffsetFrame.firstElementChild as HTMLElement).style.marginLeft).toBe('20px')
+        expect((copiedOffsetFrame.firstElementChild as HTMLElement).style.marginTop).toBe('12px')
+        expect(copiedInsetFrame.style.display).toBe('flex')
+        expect((copiedInsetFrame.firstElementChild as HTMLElement).style.margin).toBe('auto')
+    })
+
     it('snapshots styles before waiting for the first image fetch', async () => {
         let resolveFetch!: (response: Response) => void
         const fetchFn = vi.fn(() => new Promise<Response>(resolve => { resolveFetch = resolve }))
@@ -240,6 +349,22 @@ describe('clipboard focus and promised HTML', () => {
 })
 
 describe('boardSafeTags', () => {
+    it('keeps an open details visible and moves stripped tag styles onto surviving children', () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<details open style="background:#eee"><summary>Open</summary><div>Body</div></details>'
+            + '<p><i style="color:red">Italic</i><u style="font-size:18px">Underlined</u></p>'
+            + '<ul><li style="display:list-item;color:blue">Entry</li></ul><pre style="color:green">Code</pre>'
+        boardSafeTags(root)
+        expect(root.querySelector('details, summary')).toBeNull()
+        expect(root.textContent).toContain('OpenBody')
+        expect((root.firstElementChild as HTMLElement).style.backgroundColor).toMatch(/^(#eee|rgb\(238, 238, 238\))$/)
+        for (const tag of ['i', 'u', 'li', 'pre']) {
+            const semantic = root.querySelector(tag)!
+            expect(semantic.hasAttribute('style')).toBe(false)
+            expect(semantic.firstElementChild!.hasAttribute('style')).toBe(true)
+        }
+        expect((root.querySelector('li > div') as HTMLElement).style.display).toBe('')
+    })
     it('turns a quote mark into a span with its color, a blockquote into a div, and keeps safe tags', () => {
         const root = document.createElement('div')
         root.innerHTML = '<p>She said <mark risu-mark="quote2" style="color: rgb(255, 215, 0);">“hi”</mark> <em style="color: #8be9fd;">softly</em></p>'
@@ -249,8 +374,9 @@ describe('boardSafeTags', () => {
         const quote = root.querySelector('p > span')!
         expect(quote.textContent).toBe('“hi”')
         expect(quote.getAttribute('style')).toBe('color: rgb(255, 215, 0);')
-        expect(root.querySelector('p > em')!.getAttribute('style')).toBe('color: #8be9fd;')
-        expect(root.querySelector('div > strong')!.textContent).toBe('note')
+        expect(root.querySelector('p > em')!.hasAttribute('style')).toBe(false)
+        expect(root.querySelector('p > em > span')!.getAttribute('style')).toBe('color: #8be9fd;')
+        expect(root.querySelector('div > div > strong')!.textContent).toBe('note')
         expect(root.querySelector('span > span')!.textContent).toBe('K')
     })
 })
@@ -425,6 +551,8 @@ describe('only what the reply shows is copied', () => {
         root.innerHTML = markup.replace('class="panel" style="display:none"', 'class="panel" style="display:block"').replace('<details>', '<details open>')
         document.body.append(root)
         const html = await buildPortableChatFragment(root, { getDefaultStyle: () => null })
+        expect(html).not.toContain('<details open')
+        expect(html).not.toContain('<summary')
         for (const shown of ['닫힌 패널 내용', '닫힌 상세 내용', '남은 글']) expect(html).toContain(shown)
         expect(html).not.toContain('물고기 도감 팝업')
     })

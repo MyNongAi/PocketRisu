@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-12",
+  "updatedAt": "2026-11-13",
   "features": [
     {
       "id": "ASSET-NAME-NORMALIZED",
@@ -2342,7 +2342,11 @@
         { "file": "src/ts/chatClipboard.ts", "contains": "const flattened = portableStyle(computed, parent, defaultStyles.of(source))" },
         { "file": "src/ts/chatClipboard.ts", "contains": "if (index > 0 && !shownInCopy(source, computed)) {" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export const BOARD_POST_SAFE_BYTES = 450 * 1024" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (postBytes > BOARD_POST_SAFE_BYTES) notifyWarning(`${copiedLabel} · ${language.copiedOverBoardLimit}`)" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (postBytes > BOARD_POST_SAFE_BYTES) notifyWarning(`${copiedLabel} · ${language.copiedOverBoardLimit}`)" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "function preservePositionedChild(source: HTMLElement, clone: HTMLElement, computed: CSSStyleDeclaration): void {" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "if (fixedHeight) clone.style.minHeight = fixedHeight" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "const BOARD_STRIPS_TAG_STYLE = new Set(['EM', 'I', 'U', 'S', 'STRIKE', 'DEL', 'INS', 'SUB', 'SUP', 'TIME', 'LI', 'PRE', 'BLOCKQUOTE'])" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "if (element instanceof HTMLDetailsElement && element.open) {" }
       ],
       "regressionTests": [
         "src/ts/chatClipboard.test.ts",

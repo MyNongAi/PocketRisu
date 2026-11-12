@@ -354,18 +354,61 @@ function preservePortableLayout(source: HTMLElement, clone: HTMLElement, compute
     // A run of text (display: inline) takes no size of its own and wraps as
     // its block does, so it needs none of this (and the copy stays smaller).
     if (!isMedia && !isOutOfFlow && !mediaFrame && !positionedCanvas && computed.display !== 'inline') {
+        // A fixed text panel lost its height and width when the copy froze or erased its used pixels.
+        // Its height goes out as a floor (min-height): Arca drops overflow and position, so what the
+        // app clipped or laid over the panel flows inside it there, and a fixed height let that run
+        // over the next paragraph (a badge over a picture, 2026-11-13 harness).
+        const fixedHeight = source.style.height && source.style.height !== 'auto' && !source.style.height.endsWith('%') ? source.style.height : ''
         clone.style.height = 'auto'
         if (hasText || source instanceof HTMLDetailsElement) {
-            clone.style.width = 'auto'
+            const box = source.getBoundingClientRect()
+            const parentBox = source.parentElement?.getBoundingClientRect()
+            // A class-sized card also needs its shown width after Arca removes the class.
+            clone.style.width = source.style.width || (parentBox && box.width > 0 && box.width < parentBox.width - 2 ? computed.width : 'auto')
             clone.style.minWidth = '0'
             clone.style.minHeight = '0'
             clone.style.maxHeight = 'none'
             clone.style.wordBreak = 'normal'
             clone.style.overflowWrap = 'break-word'
         }
+        if (fixedHeight) clone.style.minHeight = fixedHeight
     }
     if (computed.display === 'flex' || computed.display === 'inline-flex') {
-        clone.style.flexWrap = 'wrap'
+        // An authored no-wrap row changed shape when the clipboard forced wrapping.
+        clone.style.flexWrap = source.style.flexWrap === 'nowrap' ? 'nowrap' : 'wrap'
+    }
+    // The article clips fixed boxes at its edge; preserve their size until they meet that edge.
+    if (clone.style.width !== 'auto' && clone.style.width && computed.display !== 'inline') clone.style.maxWidth = '100%'
+    if (source.style.width && source.style.height && source.style.height !== 'auto' && !positionedCanvas && !isMedia) {
+        const box = source.getBoundingClientRect()
+        if (box.width > 0 && box.height > 0) {
+            // A capped width with the old fixed height stretched the copied frame.
+            clone.style.aspectRatio = `${box.width} / ${box.height}`
+            clone.style.height = 'auto'
+            // Grows past the ratio only when its content needs it, instead of running over what follows.
+            clone.style.minHeight = 'auto'
+        }
+    }
+    // Computed auto margins are used pixels. Keep the centering rule across article widths.
+    if (computed.position !== 'absolute' && computed.position !== 'fixed' && computed.display !== 'inline') {
+        const left = source.style.marginLeft
+        const right = source.style.marginRight
+        const explicitAuto = left === 'auto' && right === 'auto'
+        const sourceBox = source.getBoundingClientRect()
+        const parentBox = source.parentElement?.getBoundingClientRect()
+        const parentStyle = source.parentElement ? getComputedStyle(source.parentElement) : null
+        const parentContentWidth = parentBox && parentStyle ? parentBox.width
+            - parseFloat(parentStyle.borderLeftWidth || '0') - parseFloat(parentStyle.borderRightWidth || '0')
+            - parseFloat(parentStyle.paddingLeft || '0') - parseFloat(parentStyle.paddingRight || '0') : 0
+        const usedLeft = parseFloat(computed.marginLeft)
+        const usedRight = parseFloat(computed.marginRight)
+        const inferredAuto = parentContentWidth > 0 && sourceBox.width > 0 && parentContentWidth > sourceBox.width + 2
+            && usedLeft > 0 && Math.abs(usedLeft - usedRight) < 1
+            && Math.abs(parentContentWidth - sourceBox.width - usedLeft - usedRight) < 3
+        if (explicitAuto || inferredAuto) {
+            clone.style.marginLeft = 'auto'
+            clone.style.marginRight = 'auto'
+        }
     }
     if (computed.display === 'grid') {
         // Resolved pixel tracks describe the old chat width, not the narrower
@@ -392,6 +435,41 @@ function preservePortableLayout(source: HTMLElement, clone: HTMLElement, compute
         clone.style.setProperty('object-fit', computed.objectFit, 'important')
         clone.style.setProperty('object-position', computed.objectPosition, 'important')
     }
+}
+
+function preservePositionedChild(source: HTMLElement, clone: HTMLElement, computed: CSSStyleDeclaration): void {
+    if (computed.position !== 'absolute' || !source.parentElement || !clone.parentElement) return
+    const parent = source.parentElement
+    if (Array.from(parent.childNodes).some(node => node.nodeType === Node.TEXT_NODE && !!node.textContent?.trim())) return
+    const siblings = Array.from(parent.children).filter(child => getComputedStyle(child).display !== 'none')
+    // A badge over an image needs a paint layer: Arca positions images above ordinary text.
+    if (siblings.some(child => child !== source && child.tagName === 'IMG')) return
+    if (siblings.indexOf(source) !== 0) return
+    const box = source.getBoundingClientRect()
+    const frame = parent.getBoundingClientRect()
+    if (!box.width || !frame.width) return
+    const parentStyle = getComputedStyle(parent)
+    const insetLeft = parseFloat(parentStyle.borderLeftWidth || '0') + parseFloat(parentStyle.paddingLeft || '0')
+    const insetTop = parseFloat(parentStyle.borderTopWidth || '0') + parseFloat(parentStyle.paddingTop || '0')
+    const innerWidth = frame.width - insetLeft - parseFloat(parentStyle.borderRightWidth || '0') - parseFloat(parentStyle.paddingRight || '0')
+    const innerHeight = frame.height - insetTop - parseFloat(parentStyle.borderBottomWidth || '0') - parseFloat(parentStyle.paddingBottom || '0')
+    const x = box.left - frame.left - insetLeft
+    const y = box.top - frame.top - insetTop
+    const centeredX = Math.abs(x - (innerWidth - box.width) / 2) < 2
+    const centeredY = Math.abs(y - (innerHeight - box.height) / 2) < 2
+    if (centeredX && centeredY && siblings.length === 1) {
+        // Inset-zero/auto-margin centering survives as a flex box with one child.
+        (clone.parentElement as HTMLElement).style.display = 'flex'
+        clone.style.margin = 'auto'
+    } else {
+        // Arca drops offsets and transforms; margins carry a first child's shown placement.
+        clone.style.marginLeft = centeredX ? 'auto' : `${Math.round(x)}px`
+        clone.style.marginRight = centeredX ? 'auto' : '0px'
+        clone.style.marginTop = `${Math.round(y)}px`
+    }
+    // The margins now place it; a board that keeps position would otherwise move it twice.
+    for (const property of ['position', 'top', 'right', 'bottom', 'left', 'inset', 'transform', 'z-index']) clone.style.removeProperty(property)
+    clone.style.maxWidth = '100%'
 }
 
 function objectPositionFraction(token: string, axis: 'x' | 'y'): number {
@@ -707,6 +785,7 @@ export async function buildPortableChatFragment(
         }
         if (source instanceof HTMLElement && clone instanceof HTMLElement) {
             preservePortableLayout(source, clone, computed, !!textContentFlags.get(source), hasPseudo)
+            preservePositionedChild(source, clone, computed)
         }
 
         const background = computed.backgroundImage
@@ -837,12 +916,13 @@ export async function buildPortableChatFragment(
 // showed in the paragraph's white. Such an element goes out as a span or a
 // div carrying the same inline style.
 const BOARD_SAFE_TAGS = new Set([
-    'A', 'B', 'BR', 'DETAILS', 'DIV', 'EM', 'FIGCAPTION', 'FIGURE',
+    'A', 'B', 'BR', 'DETAILS', 'DIV', 'EM', 'I', 'U', 'S', 'STRIKE', 'DEL', 'INS', 'SUB', 'SUP', 'TIME', 'FIGCAPTION', 'FIGURE',
     'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IFRAME', 'IMG', 'LI', 'OL', 'P', 'PRE',
-    'S', 'SPAN', 'STRONG', 'SUMMARY', 'TABLE', 'TBODY', 'THEAD', 'TFOOT', 'TD', 'TH', 'TR', 'UL',
+    'SPAN', 'STRONG', 'SUMMARY', 'TABLE', 'TBODY', 'THEAD', 'TFOOT', 'TD', 'TH', 'TR', 'UL',
     'VIDEO', 'SOURCE',
 ])
 const BLOCK_TAGS = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|CENTER|DD|DL|DT|FIELDSET|FOOTER|FORM|HEADER|MAIN|NAV|SECTION)$/
+const BOARD_STRIPS_TAG_STYLE = new Set(['EM', 'I', 'U', 'S', 'STRIKE', 'DEL', 'INS', 'SUB', 'SUP', 'TIME', 'LI', 'PRE', 'BLOCKQUOTE'])
 
 /**
  * Renames, inside `root`, every element a board would unwrap (see
@@ -851,6 +931,32 @@ const BLOCK_TAGS = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|CENTER|DD|DL|DT|FIELDSET|
  */
 export function boardSafeTags(root: Element): void {
     for (const element of Array.from(root.querySelectorAll('*'))) {
+        if (element instanceof HTMLDetailsElement && element.open) {
+            // Arca removes open, so show the summary and body as an ordinary block.
+            const block = element.ownerDocument.createElement('div')
+            for (const attr of Array.from(element.attributes)) if (attr.name !== 'open') block.setAttribute(attr.name, attr.value)
+            for (const child of Array.from(element.childNodes)) {
+                if (child instanceof HTMLElement && child.tagName === 'SUMMARY') {
+                    const line = element.ownerDocument.createElement('div')
+                    for (const attr of Array.from(child.attributes)) line.setAttribute(attr.name, attr.value)
+                    line.append(...Array.from(child.childNodes))
+                    block.append(line)
+                } else block.append(child)
+            }
+            element.replaceWith(block)
+            continue
+        }
+        if (BOARD_STRIPS_TAG_STYLE.has(element.tagName) && element.hasAttribute('style')) {
+            // Arca keeps these semantic tags but strips their color and spacing.
+            const inner = element.ownerDocument.createElement(/^(LI|PRE|BLOCKQUOTE)$/.test(element.tagName) ? 'div' : 'span')
+            inner.setAttribute('style', element.getAttribute('style') ?? '')
+            // The outer list/subscript tag already supplies its marker or baseline.
+            if (element.tagName === 'LI' && inner.style.display === 'list-item') inner.style.removeProperty('display')
+            if (/^(SUB|SUP)$/.test(element.tagName) && /^(sub|super)$/.test(inner.style.verticalAlign)) inner.style.removeProperty('vertical-align')
+            inner.append(...Array.from(element.childNodes))
+            element.append(inner)
+            element.removeAttribute('style')
+        }
         if (BOARD_SAFE_TAGS.has(element.tagName) || element.namespaceURI !== 'http://www.w3.org/1999/xhtml') continue
         const display = (element as HTMLElement).style?.display ?? ''
         const block = display ? /^(block|flex|grid|list-item|table|flow-root)/.test(display) : BLOCK_TAGS.test(element.tagName)
