@@ -342,12 +342,16 @@
       "ownerFiles": [
         "src/lib/SideBars/Sidebar.svelte",
         "src/ts/gui/railBotList.svelte.ts",
+        "src/ts/gui/sidebarCatalogLayout.svelte.ts",
         "src/ts/splitLayout.svelte.ts",
         "src/ts/chatSplitPane.ts",
         "src/lib/ChatScreens/SplitWorkspace.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render addCharacterButton('top')}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "oncontextmenu={botListContextMenu}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "if (selected === '0') setSidebarCatalogSplit(!sidebarCatalog.split)" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "onpointerdown={botListPointerDown}" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "class:invisible={!botListShown}" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "data-spacer-index=\"0\"" },
         { "file": "src/ts/gui/railBotList.svelte.ts", "contains": "export function setRailBotListShown(pane: PaneId, shown: boolean): void" },
@@ -2467,6 +2471,9 @@
         { "file": "src/ts/protonLinkPrompt.svelte.ts", "contains": "export function askProtonLink(destination: ProtonLinkDestination): Promise<string | null>" },
         { "file": "src/lib/Others/ProtonLinkDialog.svelte", "contains": "className=\"flex-1 min-w-0\"" },
         { "file": "src/ts/characters.ts", "contains": "const url = await askProtonLink('character')" },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "msg: 'importProton'" },
+        { "file": "src/ts/characters.ts", "contains": "case 'importProton':" },
+        { "file": "src/lib/Others/ProtonLinkDialog.svelte", "contains": "language.protonImportTitle : language.importFromProtonAsModule" },
         { "file": "src/ts/process/moduleImport.ts", "contains": "const url = await askProtonLink('module')" }
       ],
       "regressionTests": [
@@ -2479,8 +2486,10 @@
       "criticality": "core-ux",
       "ownerFiles": [
         "src/lib/Others/ProtonFolderBrowser.svelte",
+        "src/App.svelte",
         "src/ts/protonBrowser.svelte.ts",
         "src/ts/protonImport.ts",
+        "src/ts/importProgress.ts",
         "src/ts/shareTargetRouting.ts"
       ],
       "requiredMarkers": [
@@ -2500,9 +2509,14 @@
           "file": "src/ts/protonBrowser.svelte.ts",
           "contains": "export function filterProtonRows("
         },
-        { "file": "src/lib/Others/ProtonFolderBrowser.svelte", "contains": "onclick={() => finish(true, 'module')}" },
-        { "file": "src/ts/protonBrowser.svelte.ts", "contains": "resolve?.(picks ? { picks, as } : null)" },
-        { "file": "src/ts/protonImport.ts", "contains": "importAs = choice.as" },
+        { "file": "src/lib/Others/ProtonFolderBrowser.svelte", "contains": "onclick={() => submit()}" },
+        { "file": "src/lib/Others/ProtonFolderBrowser.svelte", "contains": "onSelect={() => submit('module')}" },
+        { "file": "src/lib/Others/ProtonFolderBrowser.svelte", "contains": "onSelect={() => submit('character')}" },
+        { "file": "src/ts/protonBrowser.svelte.ts", "contains": "export function submitProtonBrowser(" },
+        { "file": "src/ts/protonBrowser.svelte.ts", "contains": "protonBrowserState.itemStates = {}" },
+        { "file": "src/App.svelte", "contains": "{#key protonBrowserState.session}" },
+        { "file": "src/ts/protonImport.ts", "contains": "await Promise.allSettled(batches)" },
+        { "file": "src/ts/importProgress.ts", "contains": "onItemSettled?.(entry.item, 'failed', error)" },
         { "file": "src/ts/shareTargetRouting.ts", "contains": "export function importableAsEither(name: string): boolean" },
         { "file": "src/ts/protonBrowser.svelte.ts", "contains": "return kind && kind !== 'plugin' ? { entry, kind, importable: true } : { entry, kind: 'unsupported', importable: false }" },
         { "file": "src/ts/protonImport.ts", "contains": "// A plugin runs code in the app: it comes in only through the plugin" }
@@ -2510,6 +2524,7 @@
       "regressionTests": [
         "src/lib/Others/ProtonFolderBrowser.test.ts",
         "src/ts/protonImport.test.ts",
+        "src/ts/importProgress.test.ts",
         "src/ts/shareTarget.test.ts"
       ]
     },

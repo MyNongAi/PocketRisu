@@ -401,7 +401,9 @@
         <LazyComponent overlay loader={assetViewerLoader} />
     {/if}
     {#if protonBrowserState.open}
-        <LazyComponent overlay loader={protonBrowserLoader} />
+        {#key protonBrowserState.session}
+            <LazyComponent overlay loader={protonBrowserLoader} />
+        {/key}
     {/if}
     <Toaster />
     <PaneToasters />

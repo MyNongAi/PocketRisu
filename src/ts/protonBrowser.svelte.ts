@@ -1,8 +1,8 @@
 // State and pure helpers for the Proton folder browser
 // (src/lib/Others/ProtonFolderBrowser.svelte).
 //
-// The importer opens the browser with the first listing and awaits the user's
-// picks; the component mounted in App.svelte does the rest.
+// The importer opens the browser with the first listing. Each import press
+// hands off a batch; the promise settles when the browser closes.
 
 import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import type { ProtonEntry, ProtonInspectResult } from './protonShareClient'
@@ -85,53 +85,87 @@ export const protonBrowserState = $state<{
     password: string
     initial: ProtonInspectResult | null
     origin: ImportOrigin
+    session: number
+    itemStates: Record<string, ProtonItemState>
 }>({
     open: false,
     url: '',
     password: '',
     initial: null,
     origin: 'character',
+    session: 0,
+    itemStates: {},
 })
 
+export type ProtonItemState = { phase: 'importing' | 'done' | 'failed', error?: string }
+
 /**
- * The files chosen, and what the user imports them as: the browser has a
- * bot and a module button (the user's request, 2026-11-08), and a .charx or
+ * The files chosen, and what the user imports them as: a .charx or
  * .json is read as that. A file only one importer takes (.risum, an image
- * card, a preset, a plugin) keeps its own kind (classifySharedImport).
+ * card, a preset) keeps its own kind (classifySharedImport).
  */
 export interface ProtonBrowserChoice {
     picks: ProtonPick[]
     as: ImportOrigin
 }
 
-let resolvePicks: ((choice: ProtonBrowserChoice | null) => void) | null = null
+let resolveClose: (() => void) | null = null
+let importPicks: ((choice: ProtonBrowserChoice, report: (pick: ProtonPick, state: ProtonItemState) => void) => void) | null = null
+let generation = 0
+let attempts: Record<string, number> = {}
 
-/** Show the browser on `initial` and resolve with the chosen files, or null on cancel. */
+/** Show the browser on `initial` and resolve when it closes. */
 export function openProtonBrowser(
     url: string,
     password: string,
     initial: ProtonInspectResult,
     origin: ImportOrigin = 'character',
-): Promise<ProtonBrowserChoice | null> {
-    // A browser that is already open gets cancelled rather than orphaned.
-    resolvePicks?.(null)
+    onImport?: (choice: ProtonBrowserChoice, report: (pick: ProtonPick, state: ProtonItemState) => void) => void,
+): Promise<void> {
+    // A replacement closes the old browser; already handed-off batches continue.
+    resolveClose?.()
+    generation++
+    protonBrowserState.session = generation
+    importPicks = onImport ?? null
     protonBrowserState.url = url
     protonBrowserState.password = password
     protonBrowserState.initial = initial
     protonBrowserState.origin = origin
+    protonBrowserState.itemStates = {}
+    attempts = {}
     protonBrowserState.open = true
     return new Promise((resolve) => {
-        resolvePicks = resolve
+        resolveClose = resolve
     })
 }
 
-/** `as`: the import button pressed; without one, the page the browser was opened from. */
-export function closeProtonBrowser(picks: ProtonPick[] | null, as: ImportOrigin = protonBrowserState.origin): void {
-    const resolve = resolvePicks
-    resolvePicks = null
+/** Hand a snapshot to the importer while the browser remains open. */
+export function submitProtonBrowser(picks: ProtonPick[], as: ImportOrigin = protonBrowserState.origin): void {
+    if (!protonBrowserState.open || !picks.length) return
+    const currentGeneration = generation
+    const thisAttempt = new Map<string, number>()
+    for (const pick of picks) {
+        const id = pick.entry.linkId
+        thisAttempt.set(id, attempts[id] = (attempts[id] ?? 0) + 1)
+        protonBrowserState.itemStates[id] = { phase: 'importing' }
+    }
+    importPicks?.({ picks, as }, (pick, state) => {
+        if (generation === currentGeneration && protonBrowserState.open && attempts[pick.entry.linkId] === thisAttempt.get(pick.entry.linkId)) {
+            protonBrowserState.itemStates[pick.entry.linkId] = state
+        }
+    })
+}
+
+export function closeProtonBrowser(): void {
+    const resolve = resolveClose
+    resolveClose = null
+    importPicks = null
+    generation++
     protonBrowserState.open = false
     protonBrowserState.initial = null
     protonBrowserState.url = ''
     protonBrowserState.password = ''
-    resolve?.(picks ? { picks, as } : null)
+    protonBrowserState.itemStates = {}
+    attempts = {}
+    resolve?.()
 }

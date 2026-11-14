@@ -886,7 +886,6 @@ export async function removeChar(identifier:string|number,name:string, type:'nor
 
 export async function addCharacter(arg:{
     reseter?:()=>any,
-    setCatalogLayout?:(mode:'single'|'split')=>void,
     /**
      * Called from a screen that stays behind the menu (the character manager,
      * the user's request, 2026-10-25): the screen is left as it is, and
@@ -898,11 +897,6 @@ export async function addCharacter(arg:{
     if(!arg.stay) MobileGUIStack.set(100)
     const reseter = arg.reseter ?? (() => {})
     const r = await alertAddCharacter()
-    if(r === 'sidebarLayoutSingle' || r === 'sidebarLayoutSplit'){
-        arg.setCatalogLayout?.(r === 'sidebarLayoutSplit' ? 'split' : 'single')
-        if(!arg.stay) MobileGUIStack.set(1)
-        return
-    }
     if(r === 'importFromRealm'){
         arg.stay?.onLeave()
         deselectCharacter()
@@ -922,16 +916,9 @@ export async function addCharacter(arg:{
         case 'importPackage':
             await importCharacterPackage()
             break
-        case 'importFromProton':
+        case 'importProton':
             await importFromProtonDrive()
             break
-        case 'importFromProtonModule': {
-            // Modules, as from the module page: nothing to select afterwards.
-            const { importModuleFromProtonDrive } = await import('./process/moduleImport')
-            await importModuleFromProtonDrive()
-            if(!arg.stay) MobileGUIStack.set(1)
-            return
-        }
         default:
             if(!arg.stay) MobileGUIStack.set(1)
             return

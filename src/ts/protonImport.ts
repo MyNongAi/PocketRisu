@@ -10,7 +10,7 @@ import { runPrefetchedImportBatch, type ImportProgressReporter } from './importP
 import { inspectProtonShare, isProtonPasswordRequired, isProtonShareUrl, ProtonRequestError, stageProtonEntry, type ProtonInspectResult } from './protonShareClient'
 import { closeImportJournal, openImportJournal, runImportTransaction, type ImportWriteScope, type OpenedImportJournal } from './importTransaction'
 import { withStagedAssets } from './stagedAssets'
-import { openProtonBrowser, type ProtonPick } from './protonBrowser.svelte'
+import { openProtonBrowser, type ProtonBrowserChoice, type ProtonItemState, type ProtonPick } from './protonBrowser.svelte'
 import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import { importCharacterProcess } from './characterCards'
 import type { RisuModule } from './process/modules'
@@ -235,66 +235,72 @@ export async function importProtonShare(
     // user sees what is inside (subfolders included) before anything imports.
     // `browse` opens it for a single shared file too (a Realm link to a file
     // that is not plainly a module: the user picks it or closes the browser).
-    let chosen: ProtonPick[]
-    // The browser's bot or module button settles how a .charx or .json is
-    // read (the user's request, 2026-11-08); a single shared file follows
-    // the page it was opened from, as before.
-    let importAs = origin
+    const batches: Promise<void>[] = []
+    let previousBatch = Promise.resolve()
+    const startBatch = (choice: ProtonBrowserChoice, report?: (pick: ProtonPick, state: ProtonItemState) => void) => {
+        const batch = previousBatch.then(() => importProtonPicks(choice.picks, choice.as, report))
+        batches.push(batch)
+        previousBatch = batch.catch(() => {})
+    }
     if (info.kind === 'folder' || options.browse) {
-        const choice = await openProtonBrowser(url, password, info, origin)
-        if (!choice || choice.picks.length === 0) return
-        chosen = choice.picks
-        importAs = choice.as
+        await openProtonBrowser(url, password, info, origin, startBatch)
+        await Promise.allSettled(batches)
     } else {
-        chosen = info.entries.map((entry) => ({ entry, path: [] }))
-    }
-    if (chosen.length === 0) {
-        alertError(language.protonNoImportableFiles)
-        return
+        await importProtonPicks(info.entries.map((entry) => ({ entry, path: [] })), origin)
     }
 
-    // From here on the work runs as tracked import tasks: the queue renders its
-    // own progress and leaves the app usable, which a modal would not.
-    // Downloads run ahead of the imports, a few at a time (the server holds a
-    // whole file per download); the imports stay one at a time, in order.
-    const skipped: string[] = []
-    const result = await runPrefetchedImportBatch(
-        // `taskName`: the card title for a file (the Realm companion's names it).
-        chosen.map((pick) => ({ name: options.taskName ? options.taskName(pick.entry.name) : pick.entry.name, pick })),
-        (item, report) => fetchProtonFile(url, password, {
-            linkId: info.kind === 'folder' ? item.pick.entry.linkId : undefined,
-            path: item.pick.path,
-            expectedSize: item.pick.entry.size,
-        }, report),
-        async (item, file, report) => {
-            report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
-            const kind = await importByKind(file, report, importAs, onModule, {
-                link: url,
-                file: item.pick.entry.name,
-                ...(info.kind === 'folder' ? { linkId: item.pick.entry.linkId, path: item.pick.path } : {}),
-                ...(item.pick.entry.size != null ? { size: item.pick.entry.size } : {}),
-                at: Date.now(),
-            })
-            if (!kind) {
-                skipped.push(file.name)
-                throw new Error(language.protonUnsupportedFile)
-            }
-        },
-        {
-            concurrency: PROTON_PARALLEL_DOWNLOADS,
-            maxBytes: PROTON_PREFETCH_BYTES,
-            sizeOf: (item) => item.pick.entry.size,
-            unknownSizeBytes: PROTON_UNKNOWN_SIZE_BYTES,
-        },
-        // A card the user took off the queue after its download: the
-        // server's copies of its assets go too.
-        (file) => { void discardProtonFile(file) },
-    )
+    async function importProtonPicks(chosen: ProtonPick[], importAs: ImportOrigin, report?: (pick: ProtonPick, state: ProtonItemState) => void): Promise<void> {
+        if (!chosen.length) {
+            alertError(language.protonNoImportableFiles)
+            return
+        }
 
-    if (result.completed > 0) {
-        notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
-    }
-    if (skipped.length > 0) {
-        alertError(`${language.protonUnsupportedFile}\n${skipped.join('\n')}`)
+        // From here on the work runs as tracked import tasks: the queue renders its
+        // own progress and leaves the app usable, which a modal would not.
+        // Downloads run ahead of the imports, a few at a time (the server holds a
+        // whole file per download); the imports stay one at a time, in order.
+        const skipped: string[] = []
+        const result = await runPrefetchedImportBatch(
+            // `taskName`: the card title for a file (the Realm companion's names it).
+            chosen.map((pick) => ({ name: options.taskName ? options.taskName(pick.entry.name) : pick.entry.name, pick })),
+            (item, report) => fetchProtonFile(url, password, {
+                linkId: info.kind === 'folder' ? item.pick.entry.linkId : undefined,
+                path: item.pick.path,
+                expectedSize: item.pick.entry.size,
+            }, report),
+            async (item, file, report) => {
+                report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
+                const kind = await importByKind(file, report, importAs, onModule, {
+                    link: url,
+                    file: item.pick.entry.name,
+                    ...(info.kind === 'folder' ? { linkId: item.pick.entry.linkId, path: item.pick.path } : {}),
+                    ...(item.pick.entry.size != null ? { size: item.pick.entry.size } : {}),
+                    at: Date.now(),
+                })
+                if (!kind) {
+                    skipped.push(file.name)
+                    throw new Error(language.protonUnsupportedFile)
+                }
+            },
+            {
+                concurrency: PROTON_PARALLEL_DOWNLOADS,
+                maxBytes: PROTON_PREFETCH_BYTES,
+                sizeOf: (item) => item.pick.entry.size,
+                unknownSizeBytes: PROTON_UNKNOWN_SIZE_BYTES,
+            },
+            // A card the user took off the queue after its download: the
+            // server's copies of its assets go too.
+            (file) => { void discardProtonFile(file) },
+            (item, phase, error) => report?.(item.pick, phase === 'done'
+                ? { phase: 'done' }
+                : { phase: 'failed', error: error instanceof Error ? error.message : String(error) }),
+        )
+
+        if (result.completed > 0) {
+            notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
+        }
+        if (skipped.length > 0) {
+            alertError(`${language.protonUnsupportedFile}\n${skipped.join('\n')}`)
+        }
     }
 }

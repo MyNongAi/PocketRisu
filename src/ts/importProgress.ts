@@ -301,6 +301,7 @@ export async function runPrefetchedImportBatch<T extends { name: string }, F>(
     importItem: (item: T, fetched: F, report: ImportProgressReporter) => Promise<void>,
     limits: PrefetchLimits<T>,
     onDropped?: (fetched: F) => void,
+    onItemSettled?: (item: T, phase: 'done' | 'failed', error?: unknown) => void,
 ): Promise<ImportBatchResult> {
     const entries = items.map((item) => ({
         item,
@@ -353,6 +354,7 @@ export async function runPrefetchedImportBatch<T extends { name: string }, F>(
             // Its fetch may still be running; it no longer holds room.
             release(entry)
             if (onDropped) entry.fetched!.then(onDropped).catch(() => {})
+            onItemSettled?.(entry.item, 'failed', new Error(language.importProgress.dropped))
             continue
         }
         startImportTask(entry.id)
@@ -360,9 +362,11 @@ export async function runPrefetchedImportBatch<T extends { name: string }, F>(
             const fetched = await entry.fetched!
             await importItem(entry.item, fetched, taskReporter(entry.id))
             completeImportTask(entry.id)
+            onItemSettled?.(entry.item, 'done')
             completed++
         } catch (error) {
             failImportTask(entry.id, error)
+            onItemSettled?.(entry.item, 'failed', error)
             failed++
         } finally {
             release(entry)

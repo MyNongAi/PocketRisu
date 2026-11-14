@@ -608,8 +608,54 @@
     commitSidebarOrder(next)
   }
 
-  function setSplitCatalogMode(enabled:boolean){
-    setSidebarCatalogSplit(enabled)
+  let botListPressTimer: ReturnType<typeof setTimeout> | undefined
+  let botListTouchStart: { x: number, y: number } | undefined
+  let suppressBotListClickUntil = 0
+  let lastBotListTouchAt = 0
+  let botListMenuOpen = false
+
+  function clearBotListPress() {
+    clearTimeout(botListPressTimer)
+    botListPressTimer = undefined
+    botListTouchStart = undefined
+  }
+
+  async function showBotListMenu() {
+    if (botListMenuOpen) return
+    botListMenuOpen = true
+    try {
+      const selected = await alertSelect([
+        { label: language.splitRailTwoColumns, variant: sidebarCatalog.split ? 'primary' : 'outline' },
+        language.cancel,
+      ], '봇 목록')
+      if (selected === '0') setSidebarCatalogSplit(!sidebarCatalog.split)
+    } finally {
+      botListMenuOpen = false
+    }
+  }
+
+  function botListPointerDown(e: PointerEvent) {
+    if (e.pointerType !== 'touch') return
+    lastBotListTouchAt = Date.now()
+    clearBotListPress()
+    botListTouchStart = { x: e.clientX, y: e.clientY }
+    botListPressTimer = setTimeout(() => {
+      suppressBotListClickUntil = Date.now() + 1000
+      clearBotListPress()
+      void showBotListMenu()
+    }, 500)
+  }
+
+  function botListPointerMove(e: PointerEvent) {
+    if (botListTouchStart && Math.hypot(e.clientX - botListTouchStart.x, e.clientY - botListTouchStart.y) > 10) clearBotListPress()
+  }
+
+  function botListContextMenu(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    clearBotListPress()
+    if (Date.now() - lastBotListTouchAt < 1000) suppressBotListClickUntil = Date.now() + 1000
+    void showBotListMenu()
   }
 
   // Module ids that exist, for the chain mark on bots with a module of their
@@ -1165,10 +1211,7 @@
   <div class="flex flex-col items-center gap-2 px-2" data-add-character-button={position}>
     <BaseRoundedButton
       onClick={async () => {
-        addCharacter({
-          reseter,
-          setCatalogLayout: (mode) => setSplitCatalogMode(mode === 'split'),
-        })
+        addCharacter({ reseter })
       }}
       ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
         ><path
@@ -1888,7 +1931,16 @@
       aria-label={botListShown ? '봇 목록 접기' : '봇 목록 펼치기'}
       title={botListShown ? '봇 목록 접기' : '봇 목록 펼치기'}
       aria-expanded={botListShown}
-      onclick={() => setRailBotListShown(railPane, !botListShown)}
+      onpointerdown={botListPointerDown}
+      onpointermove={botListPointerMove}
+      onpointerleave={clearBotListPress}
+      onpointerup={clearBotListPress}
+      onpointercancel={clearBotListPress}
+      oncontextmenu={botListContextMenu}
+      onclick={() => {
+        if (Date.now() < suppressBotListClickUntil) { suppressBotListClickUntil = 0; return }
+        setRailBotListShown(railPane, !botListShown)
+      }}
     >{#if botListShown}<ChevronUpIcon size={18} />{:else}<ChevronDownIcon size={18} />{/if}</button>
   </div>
   <!-- Keep the virtual scroller mounted and measured so reopening restores its position. -->

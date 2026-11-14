@@ -43,14 +43,14 @@ describe('PWA share target import routing', () => {
     })
 })
 
-describe('files either importer reads (the Proton browser\'s two buttons, 2026-11-08)', () => {
+describe('files either importer reads (the Proton browser override menu)', () => {
     test('a .charx or .json is either, a module export or another type is not', () => {
         expect(importableAsEither('Heroine.charx')).toBe(true)
         expect(importableAsEither('card.JSON')).toBe(true)
         expect(importableAsEither('Heroine.module.charx')).toBe(false)
         expect(importableAsEither('extra.risum')).toBe(false)
         expect(importableAsEither('card.png')).toBe(false)
-        // The button decides those: the same file reads as each.
+        // The import choice decides those: the same file reads as each.
         expect(classifySharedImport('Heroine.charx', '', 'character')).toBe('character')
         expect(classifySharedImport('Heroine.charx', '', 'module')).toBe('module')
     })

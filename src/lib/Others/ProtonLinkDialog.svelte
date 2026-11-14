@@ -32,7 +32,7 @@
     closeOnEscape={true}
     closeOnOutsideClick={false}
 >
-    {#snippet title()}{protonLinkPromptState.destination === 'character' ? language.importFromProtonAsBot : language.importFromProtonAsModule}{/snippet}
+    {#snippet title()}{protonLinkPromptState.destination === 'character' ? language.protonImportTitle : language.importFromProtonAsModule}{/snippet}
 
     <div class="flex flex-col gap-3">
         <p class="text-sm text-textcolor2">{protonLinkPromptState.destination === 'character' ? language.protonLinkCharacterDesc : language.protonLinkModuleDesc}</p>

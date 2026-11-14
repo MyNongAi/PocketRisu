@@ -196,11 +196,14 @@ describe('import progress queue', () => {
         it('a failed fetch fails its task, frees its bytes and the rest continue', async () => {
             const { fetchItem, started, settle } = controlledFetches()
             const imported: string[] = []
+            const settled: Array<[string, string, string | undefined]> = []
             const run = runPrefetchedImportBatch(
                 ['a', 'b', 'c'].map((name) => ({ name })),
                 fetchItem,
                 async (item) => { imported.push(item.name) },
                 { ...limits(20), concurrency: 1 },
+                undefined,
+                (item, phase, error) => settled.push([item.name, phase, error instanceof Error ? error.message : undefined]),
             )
             await tick()
             expect(started).toEqual(['a'])
@@ -213,6 +216,7 @@ describe('import progress queue', () => {
             const tasks = [...get(importTasks).values()]
             expect(tasks.map((task) => task.phase)).toEqual(['failed', 'done', 'done'])
             expect(tasks[0].error).toBe('share gone')
+            expect(settled).toEqual([['a', 'failed', 'share gone'], ['b', 'done', undefined], ['c', 'done', undefined]])
         })
 
         it('a queued task shows its fetch progress', async () => {
@@ -242,12 +246,14 @@ describe('import progress queue', () => {
             const { fetchItem, settle } = controlledFetches()
             const imported: string[] = []
             const dropped: unknown[] = []
+            const settled: Array<[string, string]> = []
             const run = runPrefetchedImportBatch(
                 ['a', 'b'].map((name) => ({ name })),
                 fetchItem,
                 async (item) => { imported.push(item.name) },
                 limits(1000),
                 (fetched) => { dropped.push(fetched) },
+                (item, phase) => { settled.push([item.name, phase]) },
             )
             await tick()
             dropQueuedImportTask([...get(importTasks).keys()][1])
@@ -257,6 +263,7 @@ describe('import progress queue', () => {
             await run
             expect(imported).toEqual(['a'])
             expect(dropped).toEqual(['data:b'])
+            expect(settled).toEqual([['a', 'done'], ['b', 'failed']])
         })
     })
 

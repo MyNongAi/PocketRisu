@@ -161,7 +161,7 @@ describe('a share file fetched for import (staged on the server)', () => {
         expect(closeImportJournal).toHaveBeenCalledTimes(1)
     })
 })
-describe('the folder browser\'s bot and module buttons (2026-11-08)', () => {
+describe('the folder browser import choices', () => {
     beforeEach(() => vi.clearAllMocks())
 
     test('the picked files are read as the pressed button says, not as the page that opened it', async () => {
@@ -171,17 +171,61 @@ describe('the folder browser\'s bot and module buttons (2026-11-08)', () => {
         const { importModuleFile } = await import('./process/moduleImport')
         const { importProtonShare } = await import('./protonImport')
         const pick = { entry: { linkId: 'l1', name: 'pack.charx', type: 2, size: 1 }, path: ['d1'] }
-        vi.mocked(openProtonBrowser).mockResolvedValueOnce({ picks: [pick], as: 'module' } as never)
+        vi.mocked(openProtonBrowser).mockImplementationOnce((async (...args: Parameters<typeof openProtonBrowser>) => {
+            args[4]?.({ picks: [pick as never], as: 'module' }, () => {})
+        }) as never)
         vi.mocked(runPrefetchedImportBatch).mockImplementationOnce((async (items: { pick: unknown }[], _fetch: unknown, run: (item: unknown, file: unknown, report: () => void) => Promise<void>) => {
             for (const item of items) await run(item, { name: 'pack.charx', data: new Uint8Array([1]) }, () => {})
             return { completed: items.length, total: items.length }
         }) as never)
         vi.mocked(classifySharedImport).mockImplementation((_name, _type, origin) => origin === 'module' ? 'module' : 'character')
 
-        // Opened from the bot page, imported with the module button.
+        // Opened from the bot page, imported through the module menu item.
         await importProtonShare(LINK, '', { kind: 'folder', name: 'f', entries: [], trail: [] } as never, 'character')
         expect(vi.mocked(classifySharedImport)).toHaveBeenCalledWith('pack.charx', '', 'module')
         expect(vi.mocked(importModuleFile)).toHaveBeenCalledTimes(1)
+    })
+
+    test('waits for closing and both batches, and reports modules from each batch', async () => {
+        const { openProtonBrowser } = await import('./protonBrowser.svelte')
+        const { runPrefetchedImportBatch } = await import('./importProgress')
+        const { classifySharedImport } = await import('./shareTargetRouting')
+        const { importModuleFile } = await import('./process/moduleImport')
+        const { importProtonShare } = await import('./protonImport')
+        const modules = vi.fn()
+        let close!: () => void
+        let releaseFirst!: () => void
+        let releaseSecond!: () => void
+        let press!: NonNullable<Parameters<typeof openProtonBrowser>[4]>
+        const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
+        const secondGate = new Promise<void>((resolve) => { releaseSecond = resolve })
+        vi.mocked(openProtonBrowser).mockImplementationOnce((async (...args: Parameters<typeof openProtonBrowser>) => {
+            press = args[4]!
+            await new Promise<void>((resolve) => { close = resolve })
+        }) as never)
+        vi.mocked(classifySharedImport).mockReturnValue('module')
+        vi.mocked(importModuleFile).mockResolvedValueOnce({ id: 'first' } as never).mockResolvedValueOnce({ id: 'second' } as never)
+        let batchNumber = 0
+        vi.mocked(runPrefetchedImportBatch).mockImplementation((async (items: { pick: { entry: { name: string } } }[], _fetch: unknown, run: (item: unknown, file: unknown, report: () => void) => Promise<void>) => {
+            await [firstGate, secondGate][batchNumber++]
+            for (const item of items) await run(item, { name: item.pick.entry.name, data: new Uint8Array() }, () => {})
+            return { completed: items.length, failed: 0, total: items.length }
+        }) as never)
+        let finished = false
+        const importing = importProtonShare(LINK, '', { kind: 'folder', name: 'f', entries: [], trail: [] } as never, 'module', modules).then(() => { finished = true })
+        await Promise.resolve()
+        press({ picks: [{ entry: { linkId: 'one', name: 'one.risum', type: 2, size: 1 } as never, path: [] }], as: 'module' }, () => {})
+        press({ picks: [{ entry: { linkId: 'two', name: 'two.risum', type: 2, size: 1 } as never, path: [] }], as: 'module' }, () => {})
+        releaseFirst()
+        await Promise.resolve()
+        expect(finished).toBe(false)
+        close()
+        await Promise.resolve()
+        expect(finished).toBe(false)
+        releaseSecond()
+        await importing
+        expect(modules.mock.calls.map(([module]) => module.id)).toEqual(['first', 'second'])
+        expect(finished).toBe(true)
     })
 })
 
@@ -193,7 +237,9 @@ describe('no plugins through the bot, module and preset pages\' Proton import (2
         const { runPrefetchedImportBatch } = await import('./importProgress')
         const { classifySharedImport } = await import('./shareTargetRouting')
         const { importProtonShare } = await import('./protonImport')
-        vi.mocked(openProtonBrowser).mockResolvedValueOnce({ picks: [{ entry: { linkId: 'p', name: 'x.js', type: 2, size: 1 }, path: [] }], as: 'character' } as never)
+        vi.mocked(openProtonBrowser).mockImplementationOnce((async (...args: Parameters<typeof openProtonBrowser>) => {
+            args[4]?.({ picks: [{ entry: { linkId: 'p', name: 'x.js', type: 2, size: 1 } as never, path: [] }], as: 'character' }, () => {})
+        }) as never)
         let thrown: unknown = null
         vi.mocked(runPrefetchedImportBatch).mockImplementationOnce((async (items: unknown[], _fetch: unknown, run: (item: unknown, file: unknown, report: () => void) => Promise<void>) => {
             for (const item of items) { try { await run(item, { name: 'x.js', data: new Uint8Array([1]) }, () => {}) } catch (error) { thrown = error } }

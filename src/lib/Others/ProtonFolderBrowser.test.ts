@@ -12,7 +12,7 @@ const client = vi.hoisted(() => ({
 vi.mock('src/ts/protonShareClient', () => client)
 
 import ProtonFolderBrowser from './ProtonFolderBrowser.svelte'
-import { buildProtonRows, filterProtonRows, formatProtonDate, formatProtonSize, openProtonBrowser, protonBrowserState } from 'src/ts/protonBrowser.svelte'
+import { buildProtonRows, closeProtonBrowser, filterProtonRows, formatProtonDate, formatProtonSize, openProtonBrowser, protonBrowserState } from 'src/ts/protonBrowser.svelte'
 
 const file = (linkId: string, name: string, extra: Partial<ProtonEntry> = {}): ProtonEntry =>
     ({ linkId, name, type: 2, size: 2048, mediaType: null, hasThumbnail: false, ...extra })
@@ -39,6 +39,7 @@ const SEASON2: ProtonInspectResult = {
 
 const mounted: unknown[] = []
 afterEach(async () => {
+    closeProtonBrowser()
     await Promise.all(mounted.splice(0).map((component) => unmount(component as never)))
     document.body.replaceChildren()
     vi.clearAllMocks()
@@ -166,9 +167,24 @@ describe('formatProtonDate', () => {
 })
 
 describe('ProtonFolderBrowser', () => {
+    it('closes a replaced browser without waiting for its handed-off batches', async () => {
+        const onImport = vi.fn()
+        const first = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT, 'character', onImport)
+        const firstSession = protonBrowserState.session
+        const second = openProtonBrowser('https://drive.proton.me/urls/T#P', '', SEASON2, 'module')
+        await first
+        expect(protonBrowserState.open).toBe(true)
+        expect(protonBrowserState.session).not.toBe(firstSession)
+        // $state hands back a proxy of the listing, not the object itself.
+        expect(protonBrowserState.initial).toStrictEqual(SEASON2)
+        closeProtonBrowser()
+        await second
+    })
+
     it('browses into a subfolder and returns picks from several folders with their paths', async () => {
         client.inspectProtonShare.mockResolvedValueOnce(SEASON2)
-        const picked = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT)
+        const onImport = vi.fn()
+        const closed = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT, 'character', onImport)
         const target = document.createElement('div')
         document.body.appendChild(target)
         mounted.push(mount(ProtonFolderBrowser, { target }))
@@ -203,18 +219,77 @@ describe('ProtonFolderBrowser', () => {
         expect(client.inspectProtonShare).toHaveBeenCalledTimes(1)
         expect(checkboxFor(target, 'card 2.png').checked).toBe(true)
 
-        // Two import buttons (2026-11-08): as bots and as modules.
-        const importButtons = [...target.querySelectorAll('button')].filter((b) => /\(2\)/.test(b.textContent ?? '')) as HTMLButtonElement[]
-        expect(importButtons.map((b) => b.textContent?.trim())).toEqual([language.protonBrowserImportAsBot(2), language.protonBrowserImportAsModule(2)])
-        importButtons[0].click()
-
-        const choice = await picked
+        expect(target.querySelector('[aria-label="' + language.protonBrowserOtherMethods + '"]')).toBeTruthy()
+        expect(target.textContent).not.toContain(language.cancel)
+        const importButton = [...target.querySelectorAll('button')].find((b) => b.textContent?.trim() === language.protonBrowserImport(2)) as HTMLButtonElement
+        importButton.click()
+        await settle()
+        const choice = onImport.mock.calls[0][0]
         expect(choice?.as).toBe('character')
         expect(choice?.picks.map((pick) => [pick.entry.linkId, pick.path])).toEqual([
             ['f2', []],
             ['s1', ['d1']],
         ])
-        expect(protonBrowserState.open).toBe(false)
+        expect(protonBrowserState.open).toBe(true)
+        expect(importButton.disabled).toBe(true)
+        expect(checkboxFor(target, 'card 2.png').checked).toBe(false)
+        expect(protonBrowserState.itemStates.f2.phase).toBe('importing')
+        onImport.mock.calls[0][1](choice.picks[0], { phase: 'done' })
+        onImport.mock.calls[0][1](choice.picks[1], { phase: 'failed', error: 'broken file' })
+        await settle()
+        expect(protonBrowserState.itemStates.f2.phase).toBe('done')
+        expect(protonBrowserState.itemStates.s1.error).toBe('broken file')
+        expect(checkboxFor(target, 'card 2.png').closest('li')?.querySelector('[aria-label="' + language.successImport + '"]')).toBeTruthy()
+        expect(checkboxFor(target, 'card 2.png').disabled).toBe(false)
+        checkboxFor(target, 'card 2.png').click()
+        await settle()
+        ;([...target.querySelectorAll('button')].find((button) => button.textContent?.trim() === language.protonBrowserImport(1)) as HTMLButtonElement).click()
+        onImport.mock.calls[0][1](choice.picks[0], { phase: 'failed', error: 'older attempt' })
+        expect(protonBrowserState.itemStates.f2.phase).toBe('importing')
+        onImport.mock.calls[1][1](onImport.mock.calls[1][0].picks[0], { phase: 'done' })
+        expect(protonBrowserState.itemStates.f2.phase).toBe('done')
+        ;([...target.querySelectorAll('li button')].find((b) => b.textContent?.includes('Season 2')) as HTMLButtonElement).click()
+        await settle()
+        expect(checkboxFor(target, 'extra.risum').closest('li')?.querySelector('[title="broken file"]')).toBeTruthy()
+        closeProtonBrowser()
+        await closed
+        expect(protonBrowserState.itemStates).toEqual({})
+    })
+
+    it('offers both override choices and omits them for presets', async () => {
+        const onImport = vi.fn()
+        const closed = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT, 'module', onImport)
+        const target = document.createElement('div')
+        document.body.appendChild(target)
+        mounted.push(mount(ProtonFolderBrowser, { target }))
+        await settle()
+        const more = target.querySelector('[aria-label="' + language.protonBrowserOtherMethods + '"]') as HTMLButtonElement
+        expect(more.disabled).toBe(true)
+        checkboxFor(target, 'card 10.charx').click()
+        await settle()
+        more.click()
+        await settle()
+        const bot = [...document.body.querySelectorAll('[data-slot="dropdown-menu-item"]')].find((item) => item.textContent?.trim() === language.protonBrowserImportAsBot(1)) as HTMLElement
+        expect(bot.title).toBe(language.protonBrowserImportAsBotHint)
+        bot.click()
+        await settle()
+        expect(onImport.mock.calls[0][0].as).toBe('character')
+        expect(protonBrowserState.open).toBe(true)
+        checkboxFor(target, 'card 10.charx').click()
+        await settle()
+        ;([...target.querySelectorAll('button')].find((button) => button.textContent?.trim() === language.protonBrowserImport(1)) as HTMLButtonElement).click()
+        expect(onImport.mock.calls[1][0].as).toBe('module')
+        closeProtonBrowser()
+        await closed
+
+        await unmount(mounted.pop() as never)
+        target.replaceChildren()
+        const presetClosed = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT, 'preset', onImport)
+        mounted.push(mount(ProtonFolderBrowser, { target }))
+        await settle()
+        expect(target.querySelector('[aria-label="' + language.protonBrowserOtherMethods + '"]')).toBeNull()
+        closeProtonBrowser()
+        await presetClosed
     })
 
     it('shows kind, size and local date in the grey line, omitting unavailable parts', async () => {
@@ -236,7 +311,8 @@ describe('ProtonFolderBrowser', () => {
     })
 
     it('selects only shown files and preserves hidden picks when search and the switch change', async () => {
-        const picked = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT)
+        const onImport = vi.fn()
+        const closed = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT, 'character', onImport)
         const target = document.createElement('div')
         document.body.appendChild(target)
         mounted.push(mount(ProtonFolderBrowser, { target }))
@@ -283,11 +359,18 @@ describe('ProtonFolderBrowser', () => {
         all.click()
         await settle()
         expect(target.textContent).toContain(language.protonBrowserSelected(1))
-        const importButton = [...target.querySelectorAll('button')].find((button) => button.textContent?.trim() === language.protonBrowserImportAsModule(1)) as HTMLButtonElement
+        ;(target.querySelector('[aria-label="' + language.protonBrowserOtherMethods + '"]') as HTMLButtonElement).click()
+        await settle()
+        const importButton = [...document.body.querySelectorAll('[data-slot="dropdown-menu-item"]')].find((item) => item.textContent?.trim() === language.protonBrowserImportAsModule(1)) as HTMLElement
+        expect(importButton.title).toBe(language.protonBrowserImportAsModuleHint)
         importButton.click()
-        const choice = await picked
+        await settle()
+        const choice = onImport.mock.calls[0][0]
         expect(choice?.as).toBe('module')
         expect(choice?.picks.map((pick) => pick.entry.linkId)).toEqual(['f10'])
+        expect(protonBrowserState.open).toBe(true)
+        closeProtonBrowser()
+        await closed
     })
 
     it('resets search on folder navigation while retaining sort and switch settings', async () => {
@@ -336,7 +419,8 @@ describe('ProtonFolderBrowser', () => {
         await tick()
 
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-        expect(await picked).toBeNull()
+        await picked
+        expect(protonBrowserState.open).toBe(false)
     })
 
     // A stray tap beside the window used to cancel and drop the picks
@@ -357,7 +441,7 @@ describe('ProtonFolderBrowser', () => {
         expect(checkboxFor(target, 'card 2.png').checked).toBe(true)
 
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-        expect(await picked).toBeNull()
+        await picked
     })
 
     it('shows the server error with a retry', async () => {

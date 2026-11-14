@@ -5,7 +5,7 @@
     import { onDestroy, onMount } from 'svelte'
     import { SvelteMap } from 'svelte/reactivity'
     import {
-        ChevronRightIcon, FileIcon, FolderIcon, HardDriveIcon, LoaderCircleIcon,
+        CheckIcon, ChevronRightIcon, EllipsisIcon, FileIcon, FolderIcon, HardDriveIcon, LoaderCircleIcon,
         PackageIcon, PuzzleIcon, SearchIcon, SlidersHorizontalIcon, UserIcon, XIcon,
     } from '@lucide/svelte'
     import { language } from 'src/lang'
@@ -13,8 +13,12 @@
     import ShInput from 'src/lib/UI/GUI/ShInput.svelte'
     import ShSwitch from 'src/lib/UI/GUI/ShSwitch.svelte'
     import ShToggle from 'src/lib/UI/GUI/ShToggle.svelte'
+    import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte'
+    import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte'
+    import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte'
+    import ShDropdownMenuItem from 'src/lib/UI/GUI/ShDropdownMenuItem.svelte'
     import {
-        buildProtonRows, closeProtonBrowser, filterProtonRows, formatProtonDate, formatProtonSize, protonBrowserState,
+        buildProtonRows, closeProtonBrowser, submitProtonBrowser, filterProtonRows, formatProtonDate, formatProtonSize, protonBrowserState,
         type ProtonPick, type ProtonRow,
     } from 'src/ts/protonBrowser.svelte'
     import { importableAsEither, type ImportOrigin } from 'src/ts/shareTargetRouting'
@@ -111,15 +115,16 @@
         }
     }
 
-    /** `as`: imported as bots or as modules (protonBrowser.svelte.ts, ProtonBrowserChoice). */
-    function finish(confirmed: boolean, as?: ImportOrigin) {
-        closeProtonBrowser(confirmed ? [...picks.values()] : null, as)
+    function submit(as: ImportOrigin = origin) {
+        if (!picks.size) return
+        submitProtonBrowser([...picks.values()], as)
+        picks.clear()
     }
 
     function onKeydown(event: KeyboardEvent) {
         if (event.key === 'Escape') {
             event.stopPropagation()
-            finish(false)
+            closeProtonBrowser()
         }
     }
 
@@ -138,9 +143,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<!-- A tap on the dark backdrop does nothing: it used to cancel and drop
-     every file picked so far (the user's report, 2026-10-28). ✕, the cancel
-     button and Escape still close it. -->
+<!-- A tap on the dark backdrop does nothing; the close button and Escape close it. -->
 <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"
     role="presentation"
@@ -155,7 +158,7 @@
         <div class="flex shrink-0 items-center gap-2 border-b border-darkborderc px-4 py-3">
             <HardDriveIcon size={18} class="shrink-0 text-textcolor2" />
             <h2 class="min-w-0 grow truncate text-base font-semibold">{language.protonImportTitle}</h2>
-            <button class="rounded p-1 text-textcolor2 hover:text-textcolor" aria-label={language.close} onclick={() => finish(false)}>
+            <button class="rounded p-1 text-textcolor2 hover:text-textcolor" aria-label={language.close} onclick={closeProtonBrowser}>
                 <XIcon size={18} />
             </button>
         </div>
@@ -263,6 +266,13 @@
                                             {[(origin !== 'preset' && importableAsEither(row.entry.name) ? language.protonBrowserKind.either : kindLabel[row.kind]?.()), formatProtonSize(row.entry.size), formatProtonDate(row.entry.modifiedAt)].filter(Boolean).join(' · ')}
                                         </span>
                                     </span>
+                                    {#if protonBrowserState.itemStates[row.entry.linkId]?.phase === 'importing'}
+                                        <LoaderCircleIcon size={16} class="shrink-0 animate-spin text-textcolor2" aria-label={language.protonImporting} />
+                                    {:else if protonBrowserState.itemStates[row.entry.linkId]?.phase === 'done'}
+                                        <CheckIcon size={16} class="shrink-0 text-green-500" aria-label={language.successImport} />
+                                    {:else if protonBrowserState.itemStates[row.entry.linkId]?.phase === 'failed'}
+                                        <span class="shrink-0 text-red-400" title={protonBrowserState.itemStates[row.entry.linkId]?.error} aria-label={language.protonImportFailed}>!</span>
+                                    {/if}
                                 </label>
                             {/if}
                         </li>
@@ -272,20 +282,19 @@
         </div>
 
         <div class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-darkborderc px-4 py-3">
-            <ShButton variant="outline" size="sm" onclick={() => finish(false)}>{language.cancel}</ShButton>
-            {#if origin === 'preset'}
-                <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true)}>
-                    {language.protonBrowserImport(picks.size)}
-                </ShButton>
-            {:else}
-                <!-- Opened from the bot or the module page alike: the user says which
-                     the picked .charx and .json files are (2026-11-08). -->
-                <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true, 'character')} title={language.protonBrowserImportAsBotHint}>
-                    {language.protonBrowserImportAsBot(picks.size)}
-                </ShButton>
-                <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true, 'module')} title={language.protonBrowserImportAsModuleHint}>
-                    {language.protonBrowserImportAsModule(picks.size)}
-                </ShButton>
+            <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => submit()}>
+                {language.protonBrowserImport(picks.size)}
+            </ShButton>
+            {#if origin !== 'preset'}
+                <ShDropdownMenu>
+                    <ShDropdownMenuTrigger disabled={picks.size === 0} aria-label={language.protonBrowserOtherMethods} title={language.protonBrowserOtherMethods} class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-darkborderc disabled:opacity-50">
+                        <EllipsisIcon size={18} />
+                    </ShDropdownMenuTrigger>
+                    <ShDropdownMenuContent align="end" side="top" class="z-[60] max-w-[calc(100vw-1.5rem)] min-w-0">
+                        <ShDropdownMenuItem onSelect={() => submit('character')} title={language.protonBrowserImportAsBotHint}>{language.protonBrowserImportAsBot(picks.size)}</ShDropdownMenuItem>
+                        <ShDropdownMenuItem onSelect={() => submit('module')} title={language.protonBrowserImportAsModuleHint}>{language.protonBrowserImportAsModule(picks.size)}</ShDropdownMenuItem>
+                    </ShDropdownMenuContent>
+                </ShDropdownMenu>
             {/if}
         </div>
     </div>

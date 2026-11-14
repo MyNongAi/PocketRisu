@@ -83,7 +83,7 @@ export function registerStoreLayers(stack: BackLayerStack = backLayers): void {
         popUpEditorStore.open = false
     })
     layer(BackLayerRank.Popup, () => assetViewerStore.open, closeAssetViewer)
-    layer(BackLayerRank.Popup, () => protonBrowserState.open, () => closeProtonBrowser(null))
+    layer(BackLayerRank.Popup, () => protonBrowserState.open, () => closeProtonBrowser())
     // The overlay character manager is only drawn by the regular shell.
     layer(
         BackLayerRank.Popup,

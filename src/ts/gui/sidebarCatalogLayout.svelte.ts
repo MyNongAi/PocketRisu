@@ -1,5 +1,5 @@
 // The bot list as one column, or two (its folders beside the bots outside
-// them), kept per browser. Set from the bot list's + menu and from the split
+// them), kept per browser. Set from the bot-list toggle's context menu and the split
 // divider's menu (the user's request, 2026-10-22), so it is shared state.
 
 const KEY = 'pocketrisu-sidebar-catalog-split-v1'
