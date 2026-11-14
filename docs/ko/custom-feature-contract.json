@@ -2202,8 +2202,10 @@
       "id": "INPUT-ECHO-VERSIONS",
       "title": "답변 아래 인풋: 복사 버튼, 인풋 버전 화살표",
       "criticality": "core-ux",
+      "notes": "사용자 보고(2026-11-14): 보낸 직후 수정 버튼 먹통 재발. 원본 메시지의 열린 수정창과 입력 중인 글을 메시지 다시 그리기 뒤에도 복원하고, 저장·취소 때 지웁니다. 인풋 미리보기 초안도 봇과 채팅별로 구분합니다.",
       "ownerFiles": [
         "src/ts/inputVersions.ts",
+        "src/ts/gui/openMessageEdits.ts",
         "src/lib/ChatScreens/Chat.svelte",
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
         "src/ts/process/index.svelte.ts",
@@ -2237,11 +2239,18 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = message.role === 'char' ? echoedInputIndex(messages, i) : -1;" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = echoedInputIndex(messages, Math.min(placeholderIndex, messages.length))" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "let echoVisible = $derived(typedText(echoShown ?? '', echoMessage?.nodeOnlyTypedInputs))" },
-        { "file": "src/ts/gui/inputEcho.ts", "contains": "return input >= 0 && isTypedInput(messages[input]) ? input : -1" }
+        { "file": "src/ts/gui/inputEcho.ts", "contains": "return input >= 0 && isTypedInput(messages[input]) ? input : -1" },
+        { "file": "src/ts/gui/openMessageEdits.ts", "contains": "const openEdits = new Map<string, OpenEdit>()" },
+        { "file": "src/ts/gui/inputEcho.ts", "contains": "scope: string" },
+        { "file": "src/ts/gui/openMessageEdits.ts", "contains": "return messages.findIndex((message, i) => message?.role === identity.role && inputEchoKey(message, i) === identity.messageKey)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const saved = identity && readMessageEdit(identity)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (identity) updateMessageEdit(identity, message)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (identity) closeMessageEdit(identity)" }
       ],
       "regressionTests": [
         "src/ts/inputVersions.test.ts",
         "src/ts/gui/inputEcho.test.ts",
+        "src/ts/gui/openMessageEdits.test.ts",
         "src/ts/typedInput.test.ts"
       ]
     },

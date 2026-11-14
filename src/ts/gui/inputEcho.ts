@@ -7,6 +7,8 @@ import { isTypedInput } from '../typedInput'
 export type InputEchoDraft = {
     /** The user message being edited (see inputEchoKey). */
     key: string
+    /** Character and chat, so an index key cannot leak into another chat. */
+    scope: string
     text: string
 }
 

@@ -36,6 +36,7 @@
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
     import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex } from "src/ts/gui/inputEcho"
+    import { closeMessageEdit, messageEditIndex, messageEditScope, openMessageEdit, readMessageEdit, updateMessageEdit, type MessageEditIdentity } from "src/ts/gui/openMessageEdits"
     import { carryTypedInput, typedText } from "src/ts/typedInput"
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
     import { recordReplyEdit } from "src/ts/chatSwipes"
@@ -158,6 +159,7 @@
     // The pane this message is drawn in (chatPanes.svelte.ts): its chat, which
     // in a split is not always the selected one.
     const view = getPaneView()
+    let editScope = $derived(messageEditScope({ chaId: view.character?.chaId ?? '', chatId: view.chat?.id, chatIndex: view.chatIndex }))
     // Hidden while the bot just entered still parses its background <style>
     // (backgroundGate.svelte.ts); a log image is drawn as it is.
     const bodyGate = backgroundGate(view)
@@ -313,7 +315,12 @@
     }
 
     async function edit(){
-        const msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
+        const identity = originalEditIdentity()
+        if (!identity) return
+        const messages = DBState.db.characters[view.characterIndex]?.chats[view.chatIndex]?.message ?? []
+        const currentIndex = messageEditIndex(messages, identity, idx)
+        if (currentIndex < 0) return
+        const msg = messages[currentIndex]
         // A reply: the page shown is the page edited (chatSwipes.ts, 2026-11-08).
         if (msg.role !== 'user') {
             recordReplyEdit(msg, message)
@@ -334,10 +341,10 @@
     let echoEditing = $state(false)
     let echoText = $state('')
     let showInputEcho = $derived(role === 'char' && previousInputIndex >= 0 && DBState.db.nodeOnlyShowInputEcho !== false)
-    let echoShown = $derived($inputEchoDraft && $inputEchoDraft.key === previousInputKey ? $inputEchoDraft.text : previousInput)
+    let echoShown = $derived($inputEchoDraft && $inputEchoDraft.scope === editScope && $inputEchoDraft.key === previousInputKey ? $inputEchoDraft.text : previousInput)
 
     $effect(() => {
-        if (echoEditing) inputEchoDraft.set({ key: previousInputKey, text: echoText })
+        if (echoEditing) inputEchoDraft.set({ scope: editScope, key: previousInputKey, text: echoText })
     })
 
     /** The user message echoed under this reply, found again by its key. */
@@ -358,7 +365,7 @@
             carryTypedInput(target, before)
             retitleCurrentChat()
         }
-        inputEchoDraft.set(null)
+        if ($inputEchoDraft?.scope === editScope && $inputEchoDraft.key === previousInputKey) inputEchoDraft.set(null)
     }
 
     // The input's versions (inputVersions.ts): the text as sent, then each
@@ -497,22 +504,56 @@
         toggleInputEchoEdit()
     }
 
-    // The original user message: publish its own edit to the draft, and while
-    // the copy under a reply is being edited, show that text as typed (plain;
-    // the message renders normally again once the edit is saved).
-    $effect(() => {
-        if (role === 'user' && editMode && messageKey) inputEchoDraft.set({ key: messageKey, text: message })
+    function originalEditIdentity(): MessageEditIdentity | null {
+        const chara = view.character
+        const chat = view.chat
+        if (idx < 0 || placeholder || !chara?.chaId || !chat) return null
+        const key = messageKey || inputEchoKey(chat.message?.[idx], idx)
+        return { chaId: chara.chaId, chatId: chat.id, chatIndex: view.chatIndex, messageKey: key, role: role ?? '' }
+    }
+
+    // The original edit survives a hash-driven Chat remount. The input echo
+    // still shares the live user draft with the copy below the reply.
+    onMount(() => {
+        const identity = originalEditIdentity()
+        const saved = identity && readMessageEdit(identity)
+        if (saved !== undefined) {
+            message = saved
+            editMode = true
+        }
     })
-    let userDraftText = $derived(role === 'user' && !editMode && $inputEchoDraft && $inputEchoDraft.key === messageKey ? $inputEchoDraft.text : null)
+
+    $effect(() => {
+        if (editMode) {
+            const identity = originalEditIdentity()
+            if (identity) updateMessageEdit(identity, message)
+        }
+        if (role === 'user' && editMode && messageKey) inputEchoDraft.set({ scope: editScope, key: messageKey, text: message })
+    })
+    let userDraftText = $derived(role === 'user' && !editMode && $inputEchoDraft && $inputEchoDraft.scope === editScope && $inputEchoDraft.key === messageKey ? $inputEchoDraft.text : null)
 
     function clearOwnEchoDraft() {
         const draft = $inputEchoDraft
-        if (role === 'user' && draft && draft.key === messageKey) inputEchoDraft.set(null)
+        if (role === 'user' && draft && draft.scope === editScope && draft.key === messageKey) inputEchoDraft.set(null)
     }
 
     function startOriginalEdit() {
         if (originalEditControlDisabled) return
+        const identity = originalEditIdentity()
+        if (identity) openMessageEdit(identity, message)
         editMode = true
+    }
+
+    function cancelOriginalEdit() {
+        editMode = false
+        const identity = originalEditIdentity()
+        if (identity) {
+            closeMessageEdit(identity)
+            const messages = DBState.db.characters[view.characterIndex]?.chats[view.chatIndex]?.message ?? []
+            const currentIndex = messageEditIndex(messages, identity, idx)
+            if (currentIndex >= 0) message = messages[currentIndex].data
+        }
+        clearOwnEchoDraft()
     }
 
     // The copy under a reply being written hands its edit to this message.
@@ -541,6 +582,8 @@
         if (editMode) {
             editMode = false
             edit()
+            const identity = originalEditIdentity()
+            if (identity) closeMessageEdit(identity)
             clearOwnEchoDraft()
         } else {
             startOriginalEdit()
@@ -953,7 +996,7 @@
     {/if}
     {#if editMode}
         <AutoresizeArea bind:value={message} onkeydown={finishEditOnSendKey} handleLongPress={() => {
-            editMode = false
+            cancelOriginalEdit()
         }} />
     {:else if userDraftText !== null}
         <span class="block whitespace-pre-wrap wrap-break-word">{userDraftText}</span>
