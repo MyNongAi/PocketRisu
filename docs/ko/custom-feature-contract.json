@@ -3085,6 +3085,8 @@
         "src/ts/process/mcp/risuaccess/writeAccess.ts",
         "src/ts/process/mcp/risuaccess/characters.ts",
         "src/ts/process/mcp/risuaccess/modules.ts",
+        "src/ts/process/mcp/risuaccess/editKinds.ts",
+        "src/ts/process/mcp/risuaccess/presets.ts",
         "src/ts/process/mcp/mcp.ts",
         "src/ts/process/mcp/toolGate.ts",
         "src/lib/SideBars/EditModeToggle.svelte",
@@ -3108,7 +3110,9 @@
         { "file": "src/ts/process/mcp/toolGate.ts", "contains": "return editMode && getDatabase().nodeOnlyEditModeModel === 'sub' ? 'submodel' : 'model'" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "const routeSnapshot = arg.routeSnapshot ?? captureChatMainRoute(initialTarget.character, initialTarget.chat, moduleContext)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const route = captureChatMainRoute(selectedCharacter, selectedChatRoom)" },
-        { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "onclick={() => setEditModel('sub')}" }
+        { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "onclick={() => setEditModel('sub')}" },
+        { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "data-edit-kinds" },
+        { "file": "src/ts/process/mcp/risuaccess/editKinds.ts", "contains": "nodeOnlyEditModeKinds" }
       ],
       "regressionTests": [
         "src/ts/process/mcp/editMode.test.ts",
@@ -3120,6 +3124,32 @@
       ]
     },
     {
+      "id": "EDIT-MODE-PRESETS",
+      "title": "편집 모드 프롬프트 프리셋 도구",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/process/mcp/risuaccess/presets.ts",
+        "src/ts/process/mcp/risuaccess/client.ts",
+        "src/ts/process/mcp/risuaccess/editKinds.ts",
+        "src/ts/process/mcp/editSession.ts",
+        "src/ts/process/mcp/risuaccess/writeAccess.ts",
+        "src/ts/process/modules.ts",
+        "src/ts/process/mcp/mcp.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/mcp/risuaccess/presets.ts", "contains": "name: 'risu-get-prompt-preset'" },
+        { "file": "src/ts/process/mcp/risuaccess/client.ts", "contains": "if (!options.external) this.handlers.push({ kind: 'preset'" },
+        { "file": "src/ts/process/mcp/editSession.ts", "contains": "export function backupPreset" },
+        { "file": "src/ts/process/mcp/risuaccess/writeAccess.ts", "contains": "else backupPreset(session, target.value, target.index)" },
+        { "file": "src/ts/process/modules.ts", "contains": "risuAccessInstructions()" },
+        { "file": "src/ts/process/mcp/mcp.ts", "contains": "methodName.startsWith('risu-')" }
+      ],
+      "regressionTests": [
+        "src/ts/process/mcp/risuaccess/presets.test.ts",
+        "src/ts/process/mcp/externalBridge.test.ts"
+      ]
+    },
+    {
       "id": "MCP-FOLDER-TOOLS",
       "title": "Risu Access MCP 폴더 도구 (폴더 안 봇·로어북 한꺼번에, 읽기 전용)",
       "criticality": "core-ux",
@@ -3128,7 +3158,7 @@
         "src/ts/process/mcp/risuaccess/client.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/mcp/risuaccess/client.ts", "contains": "this.handlers = [new CharacterHandler(options.writeAccess), new ChatHandler(), new ModuleHandler(options.writeAccess), new FolderHandler()]" },
+        { "file": "src/ts/process/mcp/risuaccess/client.ts", "contains": "{ kind: 'bot', handler: new FolderHandler() }" },
         { "file": "src/ts/process/mcp/risuaccess/folders.ts", "contains": "name: 'risu-list-folder-characters'," },
         { "file": "src/ts/process/mcp/risuaccess/folders.ts", "contains": ".filter((c) => c.nodeOnlyEditBackupOf === chaId)" }
       ],
@@ -3361,7 +3391,8 @@
         { "file": "server/node/mcp-bridge.cjs", "contains": "return given.length === expected.length && timingSafeEqual(given, expected);" },
         { "file": "server/node/server.cjs", "contains": "mcpBridge.handleHttp(req, res).catch(next);" },
         { "file": "src/ts/process/mcp/externalBridge.ts", "contains": "if (typeof call.name !== 'string' || !EXTERNAL_TOOLS.has(call.name)) {" },
-        { "file": "src/ts/process/mcp/externalBridge.ts", "contains": "return new RisuAccessClient({ writeAccess: externalWriteAccess })" },
+        { "file": "src/ts/process/mcp/externalBridge.ts", "contains": "return new RisuAccessClient({ writeAccess: externalWriteAccess, external: true })" },
+        { "file": "src/ts/process/mcp/risuaccess/client.ts", "contains": "if (!options.external) this.handlers.push({ kind: 'preset'" },
         { "file": "src/ts/process/mcp/externalBridge.ts", "contains": "if (refusal) return { content: [{ type: 'text', text: refusal }], isError: true }" },
         { "file": "src/ts/process/mcp/editMode.ts", "contains": "return DBState.db.nodeOnlyExternalEditApp ? null : language.externalMcpEditModeOff" },
         { "file": "src/ts/process/mcp/risuaccess/writeAccess.ts", "contains": "const allowed = DBState.db.nodeOnlyExternalEditSession?.approval === 'auto'" },

@@ -170,6 +170,11 @@ export async function callMCPTool(methodName:string, args:any, mcpURL?:string):P
         if(tool) {
             return await MCPs[key].callTool(methodName, args);
         }
+        // A switch may have gone off after a request learned its tool list.
+        // Let Risu Access explain which switch to turn back on.
+        if (key === 'internal:risuai' && methodName.startsWith('risu-')) {
+            return await MCPs[key].callTool(methodName, args);
+        }
     }
     return  [{
         type: 'text',

@@ -21,6 +21,7 @@ import { v4 } from 'uuid'
 import { forageStorage } from 'src/ts/globalApi.svelte'
 import { createSseParser } from 'src/ts/sync/sseParser'
 import type { MCPTool, RPCToolCallContent } from './mcplib'
+import { editKinds, risuAccessInstructions } from './risuaccess/editKinds'
 
 export const EXTERNAL_TOOLS: ReadonlySet<string> = new Set([
     'risu-list-characters',
@@ -74,13 +75,18 @@ export type BridgeAnswer =
 
 /** `refusal`: why calls may not run now (the edit mode is off), or null. */
 export async function answerCall(host: ToolHost, call: BridgeCall, refusal: string | null = null): Promise<BridgeAnswer> {
+    const kinds = editKinds()
+    const allowedKind = (name: string) => name.includes('module') ? kinds.module : kinds.bot
     if (call.kind === 'list') {
-        const tools = (await host.getToolList()).filter((tool) => EXTERNAL_TOOLS.has(tool.name))
-        return { tools, instructions: host.serverInfo.instructions }
+        const tools = (await host.getToolList()).filter((tool) => EXTERNAL_TOOLS.has(tool.name) && allowedKind(tool.name))
+        return { tools, instructions: risuAccessInstructions({ ...kinds, preset: false }) }
     }
     if (refusal) return { content: [{ type: 'text', text: refusal }], isError: true }
     if (typeof call.name !== 'string' || !EXTERNAL_TOOLS.has(call.name)) {
         return { content: [{ type: 'text', text: `Tool ${String(call.name)} is not available.` }], isError: true }
+    }
+    if (!allowedKind(call.name)) {
+        return { content: [{ type: 'text', text: `Turn on the ${call.name.includes('module') ? '모듈' : '봇'} switch under 고칠 것 to use this tool.` }], isError: true }
     }
     return { content: await host.callTool(call.name, call.arguments ?? {}) }
 }
@@ -285,7 +291,7 @@ export function startExternalMcpBridge(): void {
                 import('./editMode'),
             ])
             refusal = externalEditRefusal
-            return new RisuAccessClient({ writeAccess: externalWriteAccess })
+            return new RisuAccessClient({ writeAccess: externalWriteAccess, external: true })
         })(),
         refusal: () => refusal(),
     })

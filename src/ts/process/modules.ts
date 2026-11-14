@@ -23,6 +23,7 @@ import { adaptLegacyProgress, runExportTask, type ImportProgressReporter } from 
 import { isImportCancelled, type ImportWriteScope } from "../importTransaction"
 import { requestModuleWake, wholeModule } from "./moduleCold.svelte"
 import { boundPersona } from "../nameOnlyPersona"
+import { risuAccessInstructions } from './mcp/risuaccess/editKinds'
 
 export interface MCPModule{
     url: string
@@ -668,7 +669,14 @@ export function getModuleLorebooks(context?:ModuleRuntimeContext) {
             continue
         }
         if (module.lorebook) {
-            lorebooks = lorebooks.concat(module.lorebook)
+            if (module.mcp?.url === 'internal:risuai') {
+                // MCP Info is stored when the module is imported (mcp.ts). Render this
+                // guide per request, in the same shape, so the "고칠 것" switches
+                // also apply to modules made before them (2026-11-14).
+                lorebooks = lorebooks.concat(module.lorebook.map((entry) => entry.comment === 'MCP Info'
+                    ? { ...entry, content: `@@mcp\n\n<MCP Info>Name:Risuai Access MCP\nVersion:1.0.0\nInst:${risuAccessInstructions()}</MCP Info>` }
+                    : entry))
+            } else lorebooks = lorebooks.concat(module.lorebook)
         }
     }
     return lorebooks

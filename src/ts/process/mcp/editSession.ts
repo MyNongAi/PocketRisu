@@ -2,7 +2,7 @@
 // 2026-10-28). While the mode is on, each bot the AI changes through the Risu
 // Access MCP is copied right before its first change into a backup bot in the
 // same folder (editBackup.ts), so the AI and the user can read the two side
-// by side; a module is copied into this record. 'auto' lets the AI write
+// by side; a module or preset is copied into this record. 'auto' lets the AI write
 // without asking, like a coding agent's auto mode; 'ask' asks for every
 // write, as the MCP always did.
 
@@ -20,6 +20,8 @@ export const MODULE_EDIT_FIELDS = [
     'lorebook', 'regex', 'trigger',
 ] as const
 
+export const PRESET_EDIT_FIELDS = ['promptTemplate', 'mainPrompt', 'jailbreak', 'globalNote', 'customPromptTemplateToggle'] as const
+
 /** The fields a target held (one it lacked is absent here and taken off again on undo). */
 export type EditBackup = Record<string, unknown>
 
@@ -29,6 +31,7 @@ export interface EditSession {
     /** Bots copied before their first change in this sitting: the bot's id → its backup bot's id. */
     characters?: Record<string, string>
     modules?: Record<string, EditBackup & { enabled?: boolean }>
+    presets?: Record<string, EditBackup & { index: number }>
 }
 
 /** A backup bot's own marks: whose copy it is, when, and the name to put back. */
@@ -69,6 +72,14 @@ export function backupModule(session: EditSession, module: { id: string }, enabl
     }
 }
 
+/** Record only editable preset fields; no extra preset is created. */
+export function backupPreset(session: EditSession, preset: { id?: string }, index: number): void {
+    session.presets ??= {}
+    const key = preset.id ?? String(index)
+    if (session.presets[key]) return
+    session.presets[key] = { ...snapshot(preset as Target, PRESET_EDIT_FIELDS), index }
+}
+
 /** Put a bot back as its backup bot holds it (the name the backup kept aside). */
 export function restoreCharacterFrom(original: object, backup: object & BackupMarks): void {
     const fields = snapshot(backup as unknown as Target, CHARACTER_EDIT_FIELDS)
@@ -76,24 +87,26 @@ export function restoreCharacterFrom(original: object, backup: object & BackupMa
     putBack(original as unknown as Target, fields, CHARACTER_EDIT_FIELDS)
 }
 
-export function editBackupCount(session: EditSession | null | undefined): { characters: number, modules: number } {
+export function editBackupCount(session: EditSession | null | undefined): { characters: number, modules: number, presets: number } {
     return {
         characters: Object.keys(session?.characters ?? {}).length,
         modules: Object.keys(session?.modules ?? {}).length,
+        presets: Object.keys(session?.presets ?? {}).length,
     }
 }
 
 /**
- * Put every bot and module the AI changed in this sitting back as it was, and
+ * Put every bot, module and preset the AI changed in this sitting back as it was, and
  * start the sitting afresh (the backup bots stay). Anything gone since is
  * skipped. Returns how many were put back.
  */
 export function restoreEdits(
     session: EditSession,
-    db: { characters: readonly ((object & { chaId: string } & BackupMarks) | null | undefined)[], modules: readonly ({ id: string } | null | undefined)[], enabledModules?: string[] },
-): { characters: number, modules: number } {
+    db: { characters: readonly ((object & { chaId: string } & BackupMarks) | null | undefined)[], modules: readonly ({ id: string } | null | undefined)[], enabledModules?: string[], botPresets?: ({ id?: string } | null | undefined)[], botPresetsId?: number },
+): { characters: number, modules: number, presets: number } {
     let characters = 0
     let modules = 0
+    let presets = 0
     for (const [chaId, backupId] of Object.entries(session.characters ?? {})) {
         const original = db.characters.find((c) => c?.chaId === chaId)
         const backup = db.characters.find((c) => c?.chaId === backupId)
@@ -112,7 +125,18 @@ export function restoreEdits(
         }
         modules++
     }
+    for (const [id, backup] of Object.entries(session.presets ?? {})) {
+        const index = db.botPresets?.findIndex((preset) => preset?.id === id) ?? -1
+        const resolved = index >= 0 ? index : backup.index
+        const preset = db.botPresets?.[resolved]
+        if (!preset) continue
+        const { index: _index, ...saved } = backup
+        putBack(preset as Target, saved, PRESET_EDIT_FIELDS)
+        if (db.botPresetsId === resolved) putBack(db as Target, saved, PRESET_EDIT_FIELDS)
+        presets++
+    }
     session.characters = {}
     session.modules = {}
-    return { characters, modules }
+    session.presets = {}
+    return { characters, modules, presets }
 }

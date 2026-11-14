@@ -48,6 +48,14 @@ afterEach(() => {
 })
 
 describe('request-scoped MCP modules', () => {
+    test('passes a stale Risu tool call to its switch refusal', async () => {
+        const client = fakeClient('switch off')
+        client.getToolList.mockResolvedValue([])
+        MCPs['internal:risuai'] = client
+        expect(await callMCPTool('risu-list-modules', {}, 'internal:risuai')).toEqual([{ type: 'text', text: 'switch off' }])
+        expect(client.callTool).toHaveBeenCalledWith('risu-list-modules', {})
+    })
+
     test('keeps simultaneous chat tool lists separate and executes the captured server', async () => {
         const clientA = fakeClient('A')
         const clientB = fakeClient('B')

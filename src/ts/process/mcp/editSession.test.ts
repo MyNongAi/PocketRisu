@@ -29,19 +29,19 @@ describe('putting edits back', () => {
         backupModule(s, module, db.enabledModules)
         db.enabledModules = ['m1']
 
-        expect(editBackupCount(s)).toEqual({ characters: 0, modules: 1 })
-        expect(restoreEdits(s, db)).toEqual({ characters: 0, modules: 1 })
+        expect(editBackupCount(s)).toEqual({ characters: 0, modules: 1, presets: 0 })
+        expect(restoreEdits(s, db)).toEqual({ characters: 0, modules: 1, presets: 0 })
         expect(module.lorebook).toEqual([{ content: 'rule' }])
         expect(module.regex).toEqual([])
         expect(db.enabledModules).toEqual([])
-        expect(editBackupCount(s)).toEqual({ characters: 0, modules: 0 })
+        expect(editBackupCount(s)).toEqual({ characters: 0, modules: 0, presets: 0 })
     })
 
     it('puts every bot of the sitting back from its backup, skipping what is gone', () => {
         const bot: any = { chaId: 'b1', name: 'X', desc: 'new' }
         const backup: any = { chaId: 'k1', name: 'X [백업]', desc: 'old', nodeOnlyEditBackupName: 'X' }
         const s: EditSession = { ...session(), characters: { b1: 'k1', gone: 'k9' } }
-        expect(restoreEdits(s, { characters: [bot, backup], modules: [] })).toEqual({ characters: 1, modules: 0 })
+        expect(restoreEdits(s, { characters: [bot, backup], modules: [] })).toEqual({ characters: 1, modules: 0, presets: 0 })
         expect(bot.desc).toBe('old')
         expect(s.characters).toEqual({})
     })

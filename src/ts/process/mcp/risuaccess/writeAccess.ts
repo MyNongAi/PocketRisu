@@ -1,6 +1,6 @@
 // Every write of the Risu Access MCP asks first, as it always did, unless the
 // chat's bot edit mode is set to 'auto' (editSession.ts). An approved write
-// backs its bot or module up first, once per edit sitting: a write through
+// backs its bot, module or preset up first, once per edit sitting: a write through
 // this MCP is the edit mode, however the module was turned on. A write from
 // an MCP client outside PocketRisu (externalBridge.ts) is the same, with the
 // database's own sitting in place of a chat's.
@@ -8,12 +8,13 @@ import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
 import { getCurrentChat, type character } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
-import { backupModule, type BackupMarks, type EditSession } from '../editSession'
+import { backupModule, backupPreset, type BackupMarks, type EditSession } from '../editSession'
 import { backupCharacterCopy } from '../editBackup'
 
 export type WriteTarget =
     | { kind: 'character', value: character }
     | { kind: 'module', value: { id: string } }
+    | { kind: 'preset', value: { id?: string }, index: number }
 
 function backupCharacterOnce(session: EditSession, char: character & BackupMarks): void {
     if (char.nodeOnlyEditBackupOf) return
@@ -27,7 +28,8 @@ function backupCharacterOnce(session: EditSession, char: character & BackupMarks
 
 function backUp(session: EditSession, target: WriteTarget): void {
     if (target.kind === 'character') backupCharacterOnce(session, target.value)
-    else backupModule(session, target.value, DBState.db.enabledModules)
+    else if (target.kind === 'module') backupModule(session, target.value, DBState.db.enabledModules)
+    else backupPreset(session, target.value, target.index)
 }
 
 export type WriteAccess = (tool: string, action: string, target?: WriteTarget) => Promise<boolean>

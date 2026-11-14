@@ -52,6 +52,17 @@ describe('a Risu Access write', () => {
         await mcpWriteAccess('t', 'a', { kind: 'module', value: { id: 'm1', name: 'Assets' } as any })
         expect(chat.value.nodeOnlyEditSession.modules.m1).toMatchObject({ name: 'Assets', enabled: false })
     })
+
+    it('asks for a named preset and records its original only once', async () => {
+        alertConfirm.mockResolvedValue(true)
+        const preset = { id: 'p1', name: 'Synthetic', promptTemplate: [{ type: 'plain', text: 'draft' }] } as any
+        expect(await mcpWriteAccess('risu-set-prompt-preset-item', 'edit prompt preset (Synthetic)', { kind: 'preset', value: preset, index: 0 })).toBe(true)
+        preset.promptTemplate[0].text = 'changed'
+        expect(await mcpWriteAccess('risu-set-prompt-preset-item', 'edit prompt preset (Synthetic)', { kind: 'preset', value: preset, index: 0 })).toBe(true)
+        expect(alertConfirm).toHaveBeenCalledTimes(2)
+        expect(alertConfirm).toHaveBeenCalledWith('Allow risu-set-prompt-preset-item: edit prompt preset (Synthetic)?')
+        expect(chat.value.nodeOnlyEditSession.presets.p1.promptTemplate[0].text).toBe('draft')
+    })
 })
 
 describe('a write from an MCP app outside PocketRisu', () => {

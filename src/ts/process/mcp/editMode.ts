@@ -1,5 +1,5 @@
 // The bot edit mode (the user's choices, 2026-10-28): the chat's model edits
-// bots and modules through the built-in Risu Access MCP. The mode is that
+// bots, modules and prompt presets through the built-in Risu Access MCP. The mode is that
 // module being on for the chat, like 🎨 and its module: the sidebar's switch
 // turns the module on or off for the chat, and turning the module on or off
 // in the module menu moves the switch (it reads the module). With it on, the
@@ -141,15 +141,15 @@ export function setEditApproval(chat: Chat, approval: EditApproval): void {
     chat.nodeOnlyEditSession!.approval = approval
 }
 
-function countText(text: string, count: { characters: number, modules: number }): string {
-    return text.replace('{chars}', String(count.characters)).replace('{modules}', String(count.modules))
+function countText(text: string, count: { characters: number, modules: number, presets: number }): string {
+    return text.replace('{chars}', String(count.characters)).replace('{modules}', String(count.modules)).replace('{presets}', String(count.presets))
 }
 
 /** Put back what the AI changed in this sitting; the mode stays on. */
 export async function revertEdits(chat: Chat): Promise<void> {
     const session = chat.nodeOnlyEditSession
     const count = editBackupCount(session)
-    if (!session || count.characters + count.modules === 0) return
+    if (!session || count.characters + count.modules + count.presets === 0) return
     if (!await alertConfirm(countText(language.editModeRevertConfirm, count))) return
     restoreEdits(session, DBState.db)
     notifySuccess(language.editModeReverted)
@@ -159,7 +159,7 @@ export async function revertEdits(chat: Chat): Promise<void> {
 export async function stopEditMode(char: character, chat: Chat): Promise<boolean> {
     const session = chat.nodeOnlyEditSession
     const count = editBackupCount(session)
-    if (session && count.characters + count.modules > 0) {
+    if (session && count.characters + count.modules + count.presets > 0) {
         const choice = await alertSelect(
             [language.editModeKeep, language.editModeStopRevert, language.cancel],
             countText(language.editModeStopAsk, count),

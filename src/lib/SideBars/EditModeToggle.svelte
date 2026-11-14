@@ -20,6 +20,7 @@
         EXTERNAL_EDIT_APPS, type EditModeChoice,
     } from 'src/ts/process/mcp/editMode'
     import { editBackupCount, restoreEdits, type EditApproval } from 'src/ts/process/mcp/editSession'
+    import { editKinds, setEditKind, type EditKind } from 'src/ts/process/mcp/risuaccess/editKinds'
     import { chatToolBlock, mainRouteMode, toolBlockText } from 'src/ts/process/mcp/toolGate'
     import { classicModelIdFor, resolveChatModelBinding } from 'src/ts/process/request/modelPresetBinding'
     import { getGenerationModelString } from 'src/ts/process/models/modelString'
@@ -62,6 +63,8 @@
     let session = $derived(app ? DBState.db.nodeOnlyExternalEditSession : chat.nodeOnlyEditSession)
     let approval = $derived(session?.approval ?? 'ask')
     let count = $derived(editBackupCount(session))
+    let kinds = $derived(editKinds())
+    let kindNote = $state(false)
     let block = $derived(on ? chatToolBlock(chat, true) : null)
     // The model the built-in mode's requests go to (toolGate.ts; the user's request, 2026-11-08).
     let editModel = $derived<'main' | 'sub'>(DBState.db.nodeOnlyEditModeModel === 'sub' ? 'sub' : 'main')
@@ -140,6 +143,10 @@
         else delete DBState.db.nodeOnlyEditModeModel
     }
 
+    function changeKind(kind: EditKind, checked: boolean) {
+        kindNote = !setEditKind(kind, checked)
+    }
+
     function setApproval(next: EditApproval) {
         if (!app) {
             setEditApproval(chat, next)
@@ -156,7 +163,7 @@
         }
         const external = DBState.db.nodeOnlyExternalEditSession
         if (!external) return
-        const text = language.editModeRevertConfirm.replace('{chars}', String(count.characters)).replace('{modules}', String(count.modules))
+        const text = language.editModeRevertConfirm.replace('{chars}', String(count.characters)).replace('{modules}', String(count.modules)).replace('{presets}', String(count.presets))
         if (!await alertConfirm(text)) return
         restoreEdits(external, DBState.db)
         notifySuccess(language.editModeReverted)
@@ -255,6 +262,13 @@
                 <ShButton size="sm" variant={approval === 'ask' ? 'primary' : 'outline'} className="h-auto min-h-8 whitespace-normal px-2 py-1" onclick={() => setApproval('ask')}>{language.editModeAsk}</ShButton>
             </div>
         </div>
+        <div class="flex flex-col gap-1" data-edit-kinds>
+            <span>{language.editModeKinds}</span>
+            <div class="flex items-center justify-between gap-2"><span>{language.editModeKindBot}</span><ShSwitch checked={kinds.bot} onCheckedChange={(checked) => changeKind('bot', checked)} /></div>
+            <div class="flex items-center justify-between gap-2"><span>{language.editModeKindModule}</span><ShSwitch checked={kinds.module} onCheckedChange={(checked) => changeKind('module', checked)} /></div>
+            <div class="flex items-center justify-between gap-2"><span>{language.editModeKindPreset}</span><ShSwitch checked={kinds.preset} onCheckedChange={(checked) => changeKind('preset', checked)} /></div>
+            {#if kindNote}<span class="text-xs text-yellow-500">{language.editModeKindsAtLeastOne}</span>{/if}
+        </div>
         <!-- Whether a bot is copied into a backup bot before its first change
              (the user's request, 2026-11-08); one setting for here and the apps. -->
         <div class="flex items-center justify-between gap-2">
@@ -264,8 +278,8 @@
         {#if DBState.db.nodeOnlyEditBotBackup === false}
             <span class="text-xs text-textcolor2 break-words" data-edit-backup-off>{language.editModeBotBackupOffNote}</span>
         {/if}
-        {#if count.characters + count.modules > 0}
-            <span>{language.editModeBackups.replace('{chars}', String(count.characters)).replace('{modules}', String(count.modules))}</span>
+        {#if count.characters + count.modules + count.presets > 0}
+            <span>{language.editModeBackups.replace('{chars}', String(count.characters)).replace('{modules}', String(count.modules)).replace('{presets}', String(count.presets))}</span>
             <ShButton size="sm" variant="outline" className="self-start" onclick={() => { void revert() }}>{language.editModeRevert}</ShButton>
         {:else if DBState.db.nodeOnlyEditBotBackup !== false}
             <!-- Off, the note above says what is kept instead. -->

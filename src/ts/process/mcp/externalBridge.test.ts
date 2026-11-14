@@ -1,8 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('src/ts/globalApi.svelte', () => ({ forageStorage: { createAuth: async () => 'jwt' } }))
+const db = vi.hoisted(() => ({ value: { nodeOnlyEditModeKinds: undefined as any } }))
+vi.mock('src/ts/storage/database.svelte', () => ({ getDatabase: () => db.value }))
+
+beforeEach(() => { db.value.nodeOnlyEditModeKinds = undefined })
 
 const { EXTERNAL_TOOLS, answerCall, startMcpBridge } = await import('./externalBridge')
 
@@ -21,7 +25,16 @@ describe('the tools PocketRisu offers MCP apps outside', () => {
     // A tool Risu Access gains (from upstream or ours) stays inside until it
     // is looked at and added to the list.
     it('are exactly the Risu Access tools looked at', () => {
-        expect([...EXTERNAL_TOOLS].sort()).toEqual(declaredTools())
+        expect([...EXTERNAL_TOOLS].sort()).toEqual(declaredTools().filter((name) => !name.includes('preset')))
+    })
+
+    it('declares every prompt preset tool internally and none externally', () => {
+        const presets = declaredTools().filter((name) => name.includes('preset'))
+        expect(presets).toEqual([
+            'risu-delete-prompt-preset-item', 'risu-get-prompt-preset', 'risu-insert-prompt-preset-item',
+            'risu-list-prompt-presets', 'risu-set-prompt-preset-field', 'risu-set-prompt-preset-item', 'risu-set-prompt-preset-toggles',
+        ])
+        for (const name of presets) expect(EXTERNAL_TOOLS.has(name)).toBe(false)
     })
 
     it('reach no prompt preset, template, memory prompt or model preset', () => {
@@ -31,18 +44,37 @@ describe('the tools PocketRisu offers MCP apps outside', () => {
     it('leaves out a tool not on the list, and refuses to run it', async () => {
         const callTool = vi.fn(async () => [{ type: 'text' as const, text: 'ran' }])
         const host = {
-            serverInfo: { instructions: 'Risu' },
+            serverInfo: { instructions: 'Prompt presets contain a synthetic sentinel' },
             getToolList: async () => [
                 { name: 'risu-list-modules', description: '', inputSchema: {} },
                 { name: 'risu-get-prompt-preset', description: '', inputSchema: {} },
             ] as any,
             callTool,
         }
-        expect(await answerCall(host, { id: '1', kind: 'list' })).toEqual({ tools: [{ name: 'risu-list-modules', description: '', inputSchema: {} }], instructions: 'Risu' })
+        const listed = await answerCall(host, { id: '1', kind: 'list' }) as any
+        expect(listed.tools).toEqual([{ name: 'risu-list-modules', description: '', inputSchema: {} }])
+        expect(listed.instructions).not.toContain('Prompt presets contain')
         expect(await answerCall(host, { id: '2', kind: 'call', name: 'risu-get-prompt-preset' })).toMatchObject({ isError: true })
         expect(callTool).not.toHaveBeenCalled()
         expect(await answerCall(host, { id: '3', kind: 'call', name: 'risu-list-modules', arguments: { count: 2 } })).toEqual({ content: [{ type: 'text', text: 'ran' }] })
         expect(callTool).toHaveBeenCalledWith('risu-list-modules', { count: 2 })
+    })
+
+    it('follows bot and module switches while omitting preset instructions even when preset is on', async () => {
+        db.value.nodeOnlyEditModeKinds = { bot: false, module: true, preset: true }
+        const host = { serverInfo: { instructions: 'Prompt presets contain a synthetic sentinel' },
+            getToolList: async () => [
+                { name: 'risu-list-characters', description: '', inputSchema: {} },
+                { name: 'risu-list-modules', description: '', inputSchema: {} },
+                { name: 'risu-get-prompt-preset', description: '', inputSchema: {} },
+            ] as any,
+            callTool: vi.fn(async () => [{ type: 'text' as const, text: 'ran' }]) }
+        const answer = await answerCall(host, { id: '1', kind: 'list' }) as any
+        expect(answer.tools.map((tool: any) => tool.name)).toEqual(['risu-list-modules'])
+        expect(answer.instructions).not.toContain('Prompt presets contain')
+        expect(answer.instructions).not.toContain('Characters are the AI personas')
+        expect(await answerCall(host, { id: '2', kind: 'call', name: 'risu-list-characters' })).toMatchObject({ isError: true })
+        expect(host.callTool).not.toHaveBeenCalled()
     })
 
     it('runs no call while the edit mode is off, but still lists the tools', async () => {
