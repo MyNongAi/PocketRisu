@@ -2249,7 +2249,7 @@
         { "file": "src/ts/gui/openMessageEdits.ts", "contains": "const openEdits = new Map<string, OpenEdit>()" },
         { "file": "src/ts/gui/inputEcho.ts", "contains": "scope: string" },
         { "file": "src/ts/gui/openMessageEdits.ts", "contains": "return messages.findIndex((message, i) => message?.role === identity.role && inputEchoKey(message, i) === identity.messageKey)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const saved = identity && readMessageEdit(identity)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const saved = readMessageEdit(originalEditIdentity())" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (identity) updateMessageEdit(identity, message)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (identity) closeMessageEdit(identity)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "saveThenStepInputVersion(toggleOriginalEdit, () => ownInputMessage, step)" },

@@ -16,6 +16,11 @@ describe('open original message edits', () => {
         closeMessageEdit(identity)
     })
 
+    it('has nothing open for a message without an identity (the greeting)', () => {
+        expect(readMessageEdit(null)).toBeUndefined()
+        expect(readMessageEdit(undefined)).toBeUndefined()
+    })
+
     it('keeps characters, chats, and messages separate', () => {
         const identity = message()
         openMessageEdit(identity, 'draft')

@@ -524,8 +524,7 @@
     // The original edit survives a hash-driven Chat remount. The input echo
     // still shares the live user draft with the copy below the reply.
     onMount(() => {
-        const identity = originalEditIdentity()
-        const saved = identity && readMessageEdit(identity)
+        const saved = readMessageEdit(originalEditIdentity())
         if (saved !== undefined) {
             message = saved
             editMode = true

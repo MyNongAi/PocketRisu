@@ -27,7 +27,11 @@ export function openMessageEdit(identity: MessageEditIdentity, text: string): vo
     openEdits.set(key(identity), { text, role: identity.role })
 }
 
-export function readMessageEdit(identity: MessageEditIdentity): string | undefined {
+// A message with no identity (the greeting, a reply's stand-in while it is
+// rerolled) never has an open edit: a null here used to read as one and open
+// an empty editor on the greeting.
+export function readMessageEdit(identity: MessageEditIdentity | null | undefined): string | undefined {
+    if (!identity) return undefined
     const entry = openEdits.get(key(identity))
     if (entry && entry.role !== identity.role) {
         // An index-only key can now point at another message.
