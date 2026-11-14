@@ -284,7 +284,7 @@
         { "file": "src/lib/Others/AlertComp.svelte", "contains": "{#each alertSelectLines(options.length, $alertStore.actions) as line (line[0])}" },
         { "file": "src/ts/status/requestToastPane.ts", "contains": "if (sidePaneView.chat?.id === chatId) return PANE_TOASTERS.side" },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "toasterId: paneToasterFor(entry.chatId)," },
-        { "file": "src/lib/UI/GUI/PaneToasters.svelte", "contains": "mobileOffset={mobileOffsetOf(box, $dockVisible)}" },
+        { "file": "src/lib/UI/GUI/PaneToasters.svelte", "contains": "mobileOffset={mobileOffsetOf(box, dock)}" },
         { "file": "src/App.svelte", "contains": "<PaneToasters />" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "{ label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' }," },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const splitCatalogMode = $derived(sidebarCatalog.split)" },
@@ -1849,12 +1849,15 @@
       "id": "REQUEST-STATUS-DOCK",
       "title": "요청 상태 창 접기: 생성 중 원형 버튼, 완료 시 체크로 채팅 이동 · 성공한 보조 요청은 바로 사라짐",
       "criticality": "core-ux",
+      "notes": "사용자 요청(2026-11-14): PC 분할에서 접은 요청 버튼은 해당 채팅이 보이는 칸의 오른쪽 위에 놓입니다. 칸별 토스트와 같은 측정 경계(`paneToastBoxes`, `dockPaneFor`)를 써서 경계선 이동·칸 바꾸기·분할 닫기를 따릅니다. 어느 칸에도 없는 요청과 가져오기 진행 버튼은 창 오른쪽에 남고, 좁은 화면 배치는 그대로입니다.",
       "ownerFiles": [
         "src/ts/status/requestStatusDock.ts",
         "src/lib/UI/GUI/RequestStatusDock.svelte",
         "src/lib/UI/GUI/RequestStatusToast.svelte",
         "src/lib/UI/GUI/RequestStatusToaster.svelte",
-        "src/App.svelte"
+        "src/App.svelte",
+        "src/ts/status/requestToastPane.ts",
+        "src/lib/UI/GUI/PaneToasters.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/status/requestStatusDock.ts", "contains": "export function keepsDoneButton(" },
@@ -1866,12 +1869,15 @@
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "width: fit-content;" },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "scheduleDismiss(id, leavesAtOnce(entry) ? 0 : RETENTION_MS)" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "if (kind === 'memory') return 'text-draculared'" },
-        { "file": "src/ts/status/requestStatusDock.ts", "contains": "return entry.phase === 'done' && entry.kind !== 'main'" }
+        { "file": "src/ts/status/requestStatusDock.ts", "contains": "return entry.phase === 'done' && entry.kind !== 'main'" },
+        { "file": "src/lib/UI/GUI/RequestStatusDock.svelte", "contains": "dockPaneFor(entry.chatId, $paneToastBoxes)" },
+        { "file": "src/lib/UI/GUI/PaneToasters.svelte", "contains": "paneToastBoxes.set(next)" }
       ],
       "regressionTests": [
         "src/ts/status/requestStatusDock.test.ts",
         "src/ts/status/requestStop.test.ts",
-        "src/lib/UI/GUI/RequestStatusToast.test.ts"
+        "src/lib/UI/GUI/RequestStatusToast.test.ts",
+        "src/ts/status/requestToastPane.test.ts"
       ]
     },
     {
@@ -2202,7 +2208,7 @@
       "id": "INPUT-ECHO-VERSIONS",
       "title": "답변 아래 인풋: 복사 버튼, 인풋 버전 화살표",
       "criticality": "core-ux",
-      "notes": "사용자 보고(2026-11-14): 보낸 직후 수정 버튼 먹통 재발. 원본 메시지의 열린 수정창과 입력 중인 글을 메시지 다시 그리기 뒤에도 복원하고, 저장·취소 때 지웁니다. 인풋 미리보기 초안도 봇과 채팅별로 구분합니다.",
+      "notes": "사용자 보고(2026-11-14): 보낸 직후 수정 버튼 먹통 재발. 원본 메시지의 열린 수정창과 입력 중인 글을 메시지 다시 그리기 뒤에도 복원하고, 저장·취소 때 지웁니다. 인풋 미리보기 초안도 봇과 채팅별로 구분합니다. 사용자 요청(2026-11-14): 원본 인풋과 답 아래 인풋을 수정하는 중 버전 ←·→를 누르면 연필 저장과 같은 경로로 먼저 저장하고, 저장 후 표시된 버전에서 이동합니다. 글이 같으면 버전은 늘지 않으며 열린 수정 메모리와 초안도 일반 저장처럼 지웁니다(`saveThenStepInputVersion`).",
       "ownerFiles": [
         "src/ts/inputVersions.ts",
         "src/ts/gui/openMessageEdits.ts",
@@ -2245,7 +2251,10 @@
         { "file": "src/ts/gui/openMessageEdits.ts", "contains": "return messages.findIndex((message, i) => message?.role === identity.role && inputEchoKey(message, i) === identity.messageKey)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const saved = identity && readMessageEdit(identity)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (identity) updateMessageEdit(identity, message)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (identity) closeMessageEdit(identity)" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (identity) closeMessageEdit(identity)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "saveThenStepInputVersion(toggleOriginalEdit, () => ownInputMessage, step)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "saveThenStepInputVersion(toggleInputEchoEdit, echoTarget, step)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if echoVersionCount >= 2}" }
       ],
       "regressionTests": [
         "src/ts/inputVersions.test.ts",
@@ -3218,6 +3227,7 @@
       "id": "FLOATING-SWIPE",
       "title": "리롤 플로팅 버튼(‹ 페이지 › ↻)",
       "criticality": "core-ux",
+      "notes": "사용자 요청(2026-11-14): 답의 자체 버튼 줄이 화면 밖에 있고 스크롤이 움직이는 동안에만 떠 있는 ‹ 페이지 › ↻ 알약이 보입니다. 스크롤이 멈춘 뒤 1.5초가 지나면 사라지고 탭도 받지 않습니다. 마우스를 올리거나 누르는 동안 유지하며 손을 떼면 숨김 시간을 다시 셉니다. 위·아래 스크롤 버튼을 꺼도 스크롤 움직임을 추적합니다(`floatingSwipeVisible`).",
       "ownerFiles": [
         "src/lib/ChatScreens/floatingSwipe.ts",
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
@@ -3231,7 +3241,10 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "newestReplyControls = newestControls(placeholder, placeholderIndex, lastRealCharIdx);" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "export const showMessageStart = (slot: number) =>" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyFloatingSwipe ??= true" },
-        { "file": "src/ts/setting/accessibilitySettingsData.ts", "contains": "'acc.nodeOnlyFloatingSwipe'," }
+        { "file": "src/ts/setting/accessibilitySettingsData.ts", "contains": "'acc.nodeOnlyFloatingSwipe'," },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "floatingSwipeVisible(floatingSwipeShown, showScrollNav, floatingSwipeHovered, floatingSwipePressed)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "class:pointer-events-none={!pillVisible}" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onpointerdown={startFloatingSwipePress}" }
       ],
       "regressionTests": [
         "src/lib/ChatScreens/floatingSwipe.test.ts"

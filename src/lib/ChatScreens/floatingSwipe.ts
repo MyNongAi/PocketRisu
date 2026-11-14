@@ -31,6 +31,11 @@ export function floatingSwipeShows(rows: readonly Span[], reply: Span, view: Spa
     return Math.min(reply.bottom, view.bottom) - Math.max(reply.top, view.top) >= minVisible
 }
 
+/** Keep an offscreen reply's pill visible during scrolling or interaction with it. */
+export function floatingSwipeVisible(rowOutOfView: boolean, scrollActive: boolean, hovered: boolean, pressed: boolean): boolean {
+    return rowOutOfView && (scrollActive || hovered || pressed)
+}
+
 const BUTTON = 36 // the scroll buttons' w-9 / h-9
 const GAP = 8
 const BOTTOM = 64 // bottom-16, where the scroll buttons and the new message button sit

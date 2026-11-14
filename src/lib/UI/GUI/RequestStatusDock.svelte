@@ -9,7 +9,7 @@
     import { requestStatuses, clearStatus } from 'src/ts/status/requestStatus'
     import { dockState, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, MobileGUI, selIdState } from 'src/ts/stores.svelte'
-    import { paneToasterFor } from 'src/ts/status/requestToastPane'
+    import { dockPaneFor, paneToastBoxes, paneToasterFor } from 'src/ts/status/requestToastPane'
     import { openChatById } from 'src/ts/status/requestActions'
     import { language } from 'src/lang'
     import { DownloadIcon } from '@lucide/svelte'
@@ -19,6 +19,7 @@
     const items = $derived($minimizedRequests
         .map((id) => ({ id, entry: $requestStatuses.get(id) }))
         .filter((item): item is { id: string, entry: NonNullable<typeof item.entry> } => !!item.entry))
+    const dockPlaces = ['window', 'main', 'side'] as const
 
     const currentChatId = $derived.by(() => {
         const character = DBState.db.characters?.[selIdState.selId]
@@ -62,9 +63,14 @@
     const rs = () => language.requestStatus
 </script>
 
-{#if items.length > 0 || $importDockPill.count > 0}
-    <div class="request-dock" role="group" aria-label={rs()?.dockLabel ?? 'Folded requests'}>
-        {#if $importDockPill.count > 0}
+{#each dockPlaces as place (place)}
+    {@const box = place === 'window' ? undefined : $paneToastBoxes[place]}
+    {@const placedItems = items.filter(({ entry }) => (dockPaneFor(entry.chatId, $paneToastBoxes) ?? 'window') === place)}
+    {#if placedItems.length > 0 || (place === 'window' && $importDockPill.count > 0)}
+    <div class="request-dock" role="group" aria-label={rs()?.dockLabel ?? 'Folded requests'}
+        style:top={box ? `calc(env(safe-area-inset-top, 0px) + ${box.top}px + 3.5rem)` : undefined}
+        style:right={box ? `${box.right + 8}px` : undefined}>
+        {#if place === 'window' && $importDockPill.count > 0}
             <!-- Folded downloads (ImportProgressToaster): a tap shows their cards again. -->
             <button type="button" class="request-dock-button request-dock-import" class:request-dock-failed={$importDockPill.failed} title={language.importProgressShow} aria-label={`${language.importProgressShow} (${$importDockPill.count})`} onclick={restoreImportDock}>
                 <DownloadIcon size={15} class={$importDockPill.failed ? 'text-red-500' : 'animate-pulse text-primary'} />
@@ -72,7 +78,7 @@
                 {#if $importDockPill.count > 1}<span class="request-dock-count">{$importDockPill.count}</span>{/if}
             </button>
         {/if}
-        {#each items as { id, entry } (id)}
+        {#each placedItems as { id, entry } (id)}
             {@const state = dockState(entry)}
             {#if state === 'running'}
                 <button type="button" class="request-dock-button" title={rs()?.dockExpand ?? 'Show the request'} aria-label={rs()?.dockExpand ?? 'Show the request'} onclick={() => expand(id)}>
@@ -89,7 +95,8 @@
             {/if}
         {/each}
     </div>
-{/if}
+    {/if}
+{/each}
 
 <style>
     .request-dock {

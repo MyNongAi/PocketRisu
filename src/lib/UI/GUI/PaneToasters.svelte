@@ -6,27 +6,27 @@
     import Toaster from './Toaster.svelte'
     import { splitChatOpen } from 'src/ts/chatSplitPane'
     import { MobileGUI } from 'src/ts/stores.svelte'
-    import { dockVisible } from 'src/ts/importDock'
-    import { PANE_TOASTERS, splitPanesShown } from 'src/ts/status/requestToastPane'
+    import { importDockPill } from 'src/ts/importDock'
+    import { minimizedRequests } from 'src/ts/status/requestStatusDock'
+    import { requestStatuses } from 'src/ts/status/requestStatus'
+    import { PANE_TOASTERS, dockPaneFor, paneToastBoxes, splitPanesShown, type PaneBox } from 'src/ts/status/requestToastPane'
     import type { PaneId } from 'src/ts/chatPanes.svelte'
 
-    type Box = { top: number, right: number, left: number, width: number }
+    type Box = PaneBox
     const PANES = ['main', 'side'] as const
     const GAP = 24
-    // The dock's column of folded requests at the window's right edge
-    // (RequestStatusDock: 2.5rem buttons 0.5rem from the edge).
+    // Reserve the folded-button column at this pane's right edge, or the
+    // window's download button beside the rightmost pane.
     const DOCK_ROOM = 48
     // sonner's card width; a narrower pane gets narrower cards.
     const CARD = 356
-
-    let boxes = $state<Partial<Record<PaneId, Box>>>({})
 
     $effect(() => {
         // Re-run when the split opens or closes.
         $splitChatOpen
         $MobileGUI
         if (!splitPanesShown()) {
-            boxes = {}
+            paneToastBoxes.set({})
             return
         }
         let last = ''
@@ -48,7 +48,7 @@
             const key = JSON.stringify(next)
             if (key === last) return
             last = key
-            boxes = next
+            paneToastBoxes.set(next)
         }
         measure()
         const timer = setInterval(measure, 1000)
@@ -59,7 +59,7 @@
         }
     })
 
-    const dockRoomOf = (box: Box, dock: boolean) => dock && box.right < DOCK_ROOM ? DOCK_ROOM : 0
+    const dockRoomOf = (box: Box, dock: boolean) => dock ? DOCK_ROOM : 0
 
     function offsetOf(box: Box, dock: boolean) {
         return { top: `${box.top + GAP}px`, right: `${box.right + GAP + dockRoomOf(box, dock)}px` }
@@ -77,14 +77,15 @@
 </script>
 
 {#each PANES as pane (pane)}
-    {#if boxes[pane]}
-        {@const box = boxes[pane]}
+    {#if $paneToastBoxes[pane]}
+        {@const box = $paneToastBoxes[pane]}
+        {@const dock = ($importDockPill.count > 0 && box.right < DOCK_ROOM) || $minimizedRequests.some((id) => dockPaneFor($requestStatuses.get(id)?.chatId, $paneToastBoxes) === pane)}
         <Toaster
             id={PANE_TOASTERS[pane]}
             position="top-right"
-            offset={offsetOf(box, $dockVisible)}
-            mobileOffset={mobileOffsetOf(box, $dockVisible)}
-            width={widthOf(box, $dockVisible)}
+            offset={offsetOf(box, dock)}
+            mobileOffset={mobileOffsetOf(box, dock)}
+            width={widthOf(box, dock)}
         />
     {:else}
         <Toaster id={PANE_TOASTERS[pane]} />

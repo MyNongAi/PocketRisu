@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { floatingSwipeBottom, floatingSwipeShows } from './floatingSwipe'
+import { floatingSwipeBottom, floatingSwipeShows, floatingSwipeVisible } from './floatingSwipe'
 
 // A view from 100 to 900; the reply's rows are 36px tall.
 const view = { top: 100, bottom: 900 }
 const row = (top: number) => ({ top, bottom: top + 36 })
+
+describe('floating swipe activity', () => {
+    it('shows only during scrolling, hover, or a press while the reply row is away', () => {
+        expect(floatingSwipeVisible(true, true, false, false)).toBe(true)
+        expect(floatingSwipeVisible(true, false, false, false)).toBe(false)
+        expect(floatingSwipeVisible(true, false, true, false)).toBe(true)
+        expect(floatingSwipeVisible(true, false, false, true)).toBe(true)
+        expect(floatingSwipeVisible(false, true, true, true)).toBe(false)
+    })
+})
 
 describe('floating ‹ page › ↻ of the newest reply', () => {
     it('shows once the reply\'s row is above the view, while the reply is still being read', () => {

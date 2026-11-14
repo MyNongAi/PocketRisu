@@ -49,7 +49,7 @@ import { isMobile } from 'src/ts/platform'
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { scrollWithinContainer } from './scrollWithin';
-    import { REPLY_ROW_BUTTONS, floatingSwipeBottom, floatingSwipeShows, type NewestReplyControls } from './floatingSwipe';
+    import { REPLY_ROW_BUTTONS, floatingSwipeBottom, floatingSwipeShows, floatingSwipeVisible, type NewestReplyControls } from './floatingSwipe';
     import { isAtTail, shouldLoadOlderPages } from './chatViewport';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile, forageStorage, requestImmediateSave } from 'src/ts/globalApi.svelte';
     import { runTrigger } from 'src/ts/process/triggers';
@@ -451,6 +451,8 @@ import { isMobile } from 'src/ts/platform'
     // request, 2026-10-31). Chats.svelte says what the row does.
     let newestReplyControls = $state<NewestReplyControls | null>(null)
     let floatingSwipeShown = $state(false)
+    let floatingSwipeHovered = $state(false)
+    let floatingSwipePressed = $state(false)
     // Px of the view the composer covers when it is on screen: the copy sits above it.
     let floatingSwipeCover = $state(0)
     let floatingSwipeFrame = 0
@@ -464,6 +466,7 @@ import { isMobile } from 'src/ts/platform'
             : null
         if (!reply || !container) {
             floatingSwipeShown = false
+            floatingSwipeHovered = false
             return
         }
         const viewRect = container.getBoundingClientRect()
@@ -474,12 +477,36 @@ import { isMobile } from 'src/ts/platform'
             .map((button) => button.getBoundingClientRect())
         floatingSwipeCover = cover
         floatingSwipeShown = floatingSwipeShows(rows, reply.getBoundingClientRect(), { top: viewRect.top, bottom: viewRect.bottom - cover })
+        if (!floatingSwipeShown) floatingSwipeHovered = false
     }
 
     function scheduleFloatingSwipe() {
         if (floatingSwipeFrame) return
         floatingSwipeFrame = requestAnimationFrame(updateFloatingSwipe)
     }
+
+    function endFloatingSwipePress(event?: Event) {
+        floatingSwipePressed = false
+        if ((event as PointerEvent | undefined)?.pointerType !== 'mouse') floatingSwipeHovered = false
+        window.removeEventListener('pointerup', endFloatingSwipePress)
+        window.removeEventListener('pointercancel', endFloatingSwipePress)
+        window.removeEventListener('blur', endFloatingSwipePress)
+        bumpScrollNav()
+    }
+
+    function startFloatingSwipePress() {
+        floatingSwipePressed = true
+        bumpScrollNav()
+        window.addEventListener('pointerup', endFloatingSwipePress)
+        window.addEventListener('pointercancel', endFloatingSwipePress)
+        window.addEventListener('blur', endFloatingSwipePress)
+    }
+
+    onMount(() => () => {
+        window.removeEventListener('pointerup', endFloatingSwipePress)
+        window.removeEventListener('pointercancel', endFloatingSwipePress)
+        window.removeEventListener('blur', endFloatingSwipePress)
+    })
 
     $effect(() => {
         void newestReplyControls
@@ -1671,11 +1698,18 @@ import { isMobile } from 'src/ts/platform'
     {#if floatingSwipeShown && newestReplyControls}
         {@const controls = newestReplyControls}
         {@const floatingButton = 'w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors select-none'}
+        {@const pillVisible = floatingSwipeVisible(floatingSwipeShown, showScrollNav, floatingSwipeHovered, floatingSwipePressed)}
         <!-- The newest reply's ‹ page › ↻ while its own row is scrolled away (floatingSwipe.ts). -->
         <div
-            class="absolute z-40 right-3 flex flex-row rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden"
+            class="absolute z-40 right-3 flex flex-row rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden transition-opacity duration-300"
+            class:opacity-0={!pillVisible}
+            class:pointer-events-none={!pillVisible}
             style:bottom={`${floatingSwipeBottom(DBState.db.nodeOnlyScrollButtonType, DBState.db.nodeOnlyScrollButtonPosition, floatingSwipeCover)}px`}
             data-floating-swipe
+            role="group"
+            onpointerenter={() => { floatingSwipeHovered = true }}
+            onpointerleave={() => { floatingSwipeHovered = false; bumpScrollNav() }}
+            onpointerdown={startFloatingSwipePress}
         >
             <button class={floatingButton} class:opacity-40={controls.currentPage <= 1}
                 title={language.floatingSwipePrev} aria-label={language.floatingSwipePrev}
@@ -2116,9 +2150,7 @@ import { isMobile } from 'src/ts/platform'
             class:no-chat-width-wide={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'wide'}
             class:no-chat-width-full={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'full'}
             onscroll={(e) => {
-            if (DBState.db.nodeOnlyScrollButtonType !== 'off') {
-                bumpScrollNav()
-            }
+            bumpScrollNav()
             scheduleFloatingSwipe()
             const chatTarget = e.currentTarget
             if(shouldLoadOlderPages(chatTarget, loadPages, currentChat.length)){

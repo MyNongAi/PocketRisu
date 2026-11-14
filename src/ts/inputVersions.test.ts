@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, rekeyRequestMark, requestedInputVersion, requestInputText, stepInputVersion, textHash } from './inputVersions'
+import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, rekeyRequestMark, requestedInputVersion, requestInputText, saveThenStepInputVersion, stepInputVersion, textHash } from './inputVersions'
 import { stepSwipe } from './chatSwipes'
 
 describe('input versions', () => {
@@ -24,6 +24,25 @@ describe('input versions', () => {
         // Going back to an older version and saving does not duplicate it.
         recordInputEdit(input, 'b')
         expect(input.nodeOnlyInputVersions).toEqual(['a', 'b'])
+    })
+
+    it('saves an open edit before stepping from the version the save shows', () => {
+        const input = { data: 'first', nodeOnlyInputVersions: ['first', 'second'] }
+        let editOpen = true
+        const save = (text: string) => () => {
+            recordInputEdit(input, text)
+            editOpen = false
+        }
+        expect(saveThenStepInputVersion(save('third'), () => input, -1)).toBe(true)
+        expect(editOpen).toBe(false)
+        expect(input.nodeOnlyInputVersions).toEqual(['first', 'second', 'third'])
+        expect(input.data).toBe('second')
+
+        editOpen = true
+        expect(saveThenStepInputVersion(save('second'), () => input, 1)).toBe(true)
+        expect(editOpen).toBe(false)
+        expect(input.nodeOnlyInputVersions).toEqual(['first', 'second', 'third'])
+        expect(input.data).toBe('third')
     })
 
     it('adds an input changed elsewhere before stepping away from it', () => {

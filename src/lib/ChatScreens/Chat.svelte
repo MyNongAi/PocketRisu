@@ -38,7 +38,7 @@
     import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex } from "src/ts/gui/inputEcho"
     import { closeMessageEdit, messageEditIndex, messageEditScope, openMessageEdit, readMessageEdit, updateMessageEdit, type MessageEditIdentity } from "src/ts/gui/openMessageEdits"
     import { carryTypedInput, typedText } from "src/ts/typedInput"
-    import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
+    import { inputVersionIndex, isRequestInput, recordInputEdit, saveThenStepInputVersion, stepInputVersion } from "src/ts/inputVersions"
     import { recordReplyEdit } from "src/ts/chatSwipes"
     import { isLogCapturePickingHere, isLogCaptureStart, logCapture, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
@@ -455,14 +455,23 @@
     })
 
     function stepOwnVersion(step: -1 | 1) {
-        if (editMode) return
+        if (editMode) {
+            if (originalEditControlDisabled) return
+            if (!saveThenStepInputVersion(toggleOriginalEdit, () => ownInputMessage, step)) return
+            retitleCurrentChat()
+            return
+        }
         const target = ownInputMessage
         if (!target || !stepInputVersion(target, step)) return
         retitleCurrentChat()
     }
 
     function stepEchoVersion(step: -1 | 1) {
-        if (echoEditing) return
+        if (echoEditing) {
+            if (!saveThenStepInputVersion(toggleInputEchoEdit, echoTarget, step)) return
+            retitleCurrentChat()
+            return
+        }
         const target = echoTarget()
         if (!target || !stepInputVersion(target, step)) return
         retitleCurrentChat()
@@ -1096,7 +1105,7 @@
             {:else}
                 <span class="min-w-0 grow whitespace-pre-wrap wrap-break-word line-clamp-3" title={echoVisible}>{echoVisible}</span>
             {/if}
-            {#if echoVersionCount >= 2 && !echoEditing}
+            {#if echoVersionCount >= 2}
                 <span class="input-echo-versions flex shrink-0 items-center gap-0.5">
                     <button type="button" class="transition-colors hover:text-primary" title={language.inputEchoPrevious} aria-label={language.inputEchoPrevious} onclick={() => stepEchoVersion(-1)}><ArrowLeft size={14} /></button>
                     <span class="tabular-nums" class:text-primary={echoIsRequestInput} title={echoIsRequestInput ? language.inputEchoRequested : undefined}>{echoVersionIndex + 1}/{echoVersionCount}{#if echoIsRequestInput}<span class="ml-0.5 rounded bg-selected px-1">{language.inputEchoRequestedShort}</span>{/if}</span>

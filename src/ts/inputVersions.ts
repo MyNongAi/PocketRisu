@@ -61,6 +61,13 @@ export function stepInputVersion(message: VersionedInput, step: -1 | 1): boolean
     return true
 }
 
+/** Finish an open edit through its normal save path, then step from the saved version. */
+export function saveThenStepInputVersion(save: () => void, target: () => VersionedInput | null, step: -1 | 1): boolean {
+    save()
+    const message = target()
+    return !!message && stepInputVersion(message, step)
+}
+
 /** A short hash of a text (FNV-1a, 32 bits, with the length). */
 export function textHash(text: string): string {
     let hash = 0x811c9dc5
