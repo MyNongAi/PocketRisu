@@ -1285,7 +1285,7 @@
         { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "if (logCapture.mode === 'text') void runTextLog(range, here)" },
         { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "writeChatClipboard(made.then((text) => text.text), made.then((text) => text.html))" },
         { "file": "src/ts/gui/logCaptureRender.ts", "contains": "export async function mountLogRange(options: RenderLogOptions, header: boolean): Promise<MountedLogRange> {" },
-        { "file": "src/ts/gui/logTextRender.ts", "contains": "const doc = new DOMParser().parseFromString(await buildPortableChatFragment(body), 'text/html')" },
+        { "file": "src/ts/gui/logTextRender.ts", "contains": "const doc = new DOMParser().parseFromString(await buildPortableChatFragment(body, {" },
         { "file": "src/lib/ChatScreens/LogCaptureOverlay.svelte", "contains": "{#if logCapture.text && logCapture.text.bytes > BOARD_POST_SAFE_BYTES}" },
         { "file": "src/lib/ChatScreens/LogCaptureOverlay.svelte", "contains": "<div class=\"flex shrink-0 flex-wrap items-center gap-1.5 border-t border-darkborderc px-4 pt-3\" data-log-copy-order>" },
         { "file": "src/ts/process/scripts.ts", "contains": "cbsConditions.logCapture ? { index:chatID, logCapture:true } : { index:chatID }" },
@@ -2314,6 +2314,32 @@
       "requiredMarkers": [
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "<div class=\"flex flex-col gap-4 bg-dark-900/50 p-3 rounded-md\">" }
       ]
+    },
+    {
+      "id": "CLIPBOARD-BOARD-OPTIONS",
+      "title": "복사 폭·아카가 못 그리는 부분 선택",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatClipboard.ts",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/ts/gui/logTextRender.ts",
+        "src/ts/setting/displaySettingsData.svelte.ts",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatClipboard.ts", "contains": "export function boardCopyWrapper(" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "export function shouldRasterizeBoardBlock(" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "style: pushed > 0 ? { margin: '0', marginTop: `${-pushed}px` } : { margin: '0' }," },
+        { "file": "src/ts/chatClipboard.ts", "contains": "const htmlToImage = await import('html-to-image')" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "if (options.unboardable === 'image') {" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "unboardable: DBState.db.nodeOnlyCopyUnboardable" },
+        { "file": "src/ts/gui/logTextRender.ts", "contains": "drawnBlocks," },
+        { "file": "src/ts/setting/displaySettingsData.svelte.ts", "contains": "id: 'display.copyWidth'" },
+        { "file": "src/ts/setting/displaySettingsData.svelte.ts", "contains": "id: 'display.copyUnboardable'" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyCopyWidth?: 'card' | 'shown'" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyCopyUnboardable?: 'unfold' | 'image'" }
+      ],
+      "regressionTests": ["src/ts/chatClipboard.test.ts"]
     },
     {
       "id": "CLIPBOARD-BOARD-SIZE",

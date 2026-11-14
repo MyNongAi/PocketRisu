@@ -46,7 +46,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets, watchAssetViewport } from '../../ts/chatAssetWindow';
-    import { BOARD_POST_SAFE_BYTES, boardPostBytes, boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
+    import { BOARD_POST_SAFE_BYTES, boardCopyWrapper, boardPostBytes, boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
     let translating = $state(false)
     let editMode = $state(false)
@@ -1206,7 +1206,7 @@
                 const hasLiveBody = !!bodyRoot?.isConnected && effectiveResolveChatAssets && !renderRawStreaming
                 const doc = parser.parseFromString(
                     hasLiveBody
-                        ? await buildPortableChatFragment(bodyRoot!)
+                        ? await buildPortableChatFragment(bodyRoot!, { unboardable: DBState.db.nodeOnlyCopyUnboardable })
                         : await ParseMarkdown(copyText, currentCharacter, 'normal', idx, getCbsCondition(), { resolveAssets: true })
                 , 'text/html')
 
@@ -1278,8 +1278,7 @@
                 // portrait, title, model badge) took a screen per copy and made
                 // several single replies in a row awkward to post (the user's
                 // request, 2026-10-28).
-                const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 0.5rem auto; background: ${root.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 8px; overflow: hidden;">
-<div style="padding: 12px 16px;">
+                const html = boardCopyWrapper(`
 <div style="display: flex; flex-direction: row; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
     ${finalIconDataUrl ? `<img style="width: 40px; height: 40px; max-width: 40px; border-radius: 50%; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
     <span style="color: ${root.getPropertyValue('--risu-theme-textcolor')}; font-weight: 600; font-size: 1rem;">${escapeHtml(displayName)}</span>
@@ -1287,8 +1286,7 @@
 <div>
     ${doc.body.innerHTML}
 </div>
-</div>
-</div>`
+`, root.getPropertyValue('--risu-theme-textcolor'), root.getPropertyValue('--risu-theme-bgcolor'), DBState.db.nodeOnlyCopyWidth, bodyRoot?.getBoundingClientRect().width ?? 0)
 
                 return hexColors(html)
             })()

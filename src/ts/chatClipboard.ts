@@ -115,6 +115,78 @@ export function boardMaxWidth(shownWidth: number): string {
     return `min(100%, ${Math.round(shownWidth)}px)`
 }
 
+export type CopyWidth = 'card' | 'shown'
+export type CopyUnboardable = 'unfold' | 'image'
+
+/**
+ * 2026-11-14: keep the user's width choice identical in both copy paths.
+ * 'shown' gives the reply `shownWidth` (its body as laid out in the app) inside
+ * the card, so the card adds its own side padding (16px each).
+ */
+export function boardCopyWrapper(content: string, textColor: string, backgroundColor: string, width: CopyWidth = 'card', shownWidth = 0): string {
+    const maxWidth = width === 'shown' && shownWidth > 0 ? boardMaxWidth(shownWidth + 32) : '600px'
+    return `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${textColor}; line-height: 1.6; max-width: ${maxWidth}; margin: 0.5rem auto; background: ${backgroundColor}; border-radius: 8px; overflow: hidden;">
+<div style="padding: 12px 16px;">
+${content}
+</div>
+</div>`
+}
+
+export interface BoardBlockDecision {
+    isRoot?: boolean
+    width: number
+    height: number
+    hasVisibleContent?: boolean
+    overlappingAbsolute?: boolean
+    lonePositionedChild?: boolean
+    backgroundImage?: string
+    pictureOnlyBackground?: boolean
+    opacity?: string
+    filter?: string
+    backdropFilter?: string
+    mixBlendMode?: string
+    clipPath?: string
+    maskImage?: string
+    writingMode?: string
+    transform?: string
+    overflowX?: string
+    scrollWidth?: number
+    clientWidth?: number
+}
+
+function nonTranslationTransform(value: string): boolean {
+    if (!value || value === 'none') return false
+    const matrix = /^matrix\(([^)]+)\)$/.exec(value)
+    if (matrix) {
+        const values = matrix[1].split(',').map(Number)
+        return values.length !== 6 || values.some((number, index) => !Number.isFinite(number) || index < 4 && Math.abs(number - (index === 0 || index === 3 ? 1 : 0)) > 0.0001)
+    }
+    const matrix3d = /^matrix3d\(([^)]+)\)$/.exec(value)
+    if (matrix3d) {
+        const values = matrix3d[1].split(',').map(Number)
+        return values.length !== 16 || values.some((number, index) => !Number.isFinite(number) || ![12, 13, 14].includes(index) && Math.abs(number - ([0, 5, 10, 15].includes(index) ? 1 : 0)) > 0.0001)
+    }
+    return !/^(?:translate(?:3d|X|Y|Z)?\([^)]*\)\s*)+$/i.test(value)
+}
+
+/** 2026-11-14: decide which effects from the 2026-11-13 probe need a picture. */
+export function shouldRasterizeBoardBlock(input: BoardBlockDecision): boolean {
+    if (input.isRoot || input.width <= 0 || input.height <= 0 || input.height > 4000) return false
+    if (input.overlappingAbsolute && !input.lonePositionedChild) return true
+    if (input.backgroundImage && input.backgroundImage !== 'none' && !input.pictureOnlyBackground && input.hasVisibleContent) return true
+    if (input.hasVisibleContent && (
+        Number(input.opacity ?? '1') < 1 ||
+        !!input.filter && input.filter !== 'none' ||
+        !!input.backdropFilter && input.backdropFilter !== 'none' ||
+        !!input.mixBlendMode && input.mixBlendMode !== 'normal' ||
+        !!input.clipPath && input.clipPath !== 'none' ||
+        !!input.maskImage && input.maskImage !== 'none'
+    )) return true
+    if (/^(?:vertical-rl|vertical-lr|sideways(?:-rl|-lr)?)$/i.test(input.writingMode ?? '')) return true
+    if (nonTranslationTransform(input.transform ?? 'none')) return true
+    return /^(?:auto|scroll|hidden)$/.test(input.overflowX ?? '') && (input.scrollWidth ?? 0) > (input.clientWidth ?? 0) + 1
+}
+
 /** Pixel size an image of `naturalWidth`×`naturalHeight` goes into a copy at, shown in a box of `boxWidth`×`boxHeight` CSS px (unknown: only the edge cap). */
 export function clipboardImageSize(naturalWidth: number, naturalHeight: number, boxWidth = 0, boxHeight = 0): { width: number; height: number } {
     let scale = 1
@@ -288,6 +360,119 @@ function shownInCopy(element: Element, computed: CSSStyleDeclaration): boolean {
         return Array.from(element.querySelectorAll('*')).some((inner) => getComputedStyle(inner).visibility === 'visible')
     }
     return true
+}
+
+function boxesOverlap(a: DOMRect, b: DOMRect): boolean {
+    return a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0
+        && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+}
+
+function overlayBlocks(root: HTMLElement, visible: Set<Element>, styleOf: (element: Element) => CSSStyleDeclaration): Set<HTMLElement> {
+    const blocks = new Set<HTMLElement>()
+    for (const element of visible) {
+        if (!(element instanceof HTMLElement) || styleOf(element).position !== 'absolute') continue
+        let container = element.parentElement
+        while (container && container !== root && (!styleOf(container).position || styleOf(container).position === 'static')) container = container.parentElement
+        if (!container || container === root || !visible.has(container)) continue
+        const box = element.getBoundingClientRect()
+        let overlaps = false
+        for (const other of visible) {
+            if (other === element || !container.contains(other) || element.contains(other) || other.contains(element)) continue
+            if (boxesOverlap(box, other.getBoundingClientRect())) { overlaps = true; break }
+        }
+        if (!overlaps) {
+            // Text in the containing block has no sibling element box of its own.
+            const text = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+            for (let node = text.nextNode(); node; node = text.nextNode()) {
+                if (element.contains(node) || !node.textContent?.trim() || !node.parentElement || !visible.has(node.parentElement)) continue
+                try {
+                    const range = container.ownerDocument.createRange()
+                    range.selectNodeContents(node)
+                    if (boxesOverlap(box, range.getBoundingClientRect())) { overlaps = true; break }
+                } catch { /* A DOM adapter may not lay out text ranges. */ }
+            }
+        }
+        if (overlaps) blocks.add(container)
+    }
+    return blocks
+}
+
+async function waitForClipboardBlockImages(block: HTMLElement): Promise<void> {
+    const images = block instanceof HTMLImageElement ? [block, ...Array.from(block.querySelectorAll('img'))] : Array.from(block.querySelectorAll('img'))
+    for (const image of images) {
+        if (image.loading === 'lazy') image.loading = 'eager'
+        if (image.complete) continue
+        await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => { cleanup(); reject(new Error('Clipboard block image timed out')) }, 20000)
+            const cleanup = () => {
+                clearTimeout(timeout)
+                image.removeEventListener('load', loaded)
+                image.removeEventListener('error', failed)
+            }
+            const loaded = () => { cleanup(); resolve() }
+            const failed = () => { cleanup(); reject(new Error('Clipboard block image failed')) }
+            image.addEventListener('load', loaded, { once: true })
+            image.addEventListener('error', failed, { once: true })
+            if (image.complete) loaded()
+        })
+    }
+}
+
+function startsFormattingContext(style: CSSStyleDeclaration): boolean {
+    return !!style.overflow && style.overflow !== 'visible' && style.overflow !== 'clip'
+        || /^(?:flow-root|flex|inline-flex|grid|inline-grid|inline-block|table|inline-table|table-cell)$/.test(style.display)
+        || !!style.float && style.float !== 'none'
+        || /^(?:absolute|fixed)$/.test(style.position)
+}
+
+/**
+ * The top margin a block's first children push out through its top edge
+ * (CSS margin collapsing). In the chat a picture or paragraph inside a box
+ * carries the reading style's 2em margin, which sits above the box; drawn on
+ * its own, the box would hold that margin inside and show its content that
+ * much lower, cut at the bottom (seen on the test server, 2026-11-14).
+ */
+export function marginThroughTop(block: Element, styleOf: (element: Element) => CSSStyleDeclaration = getComputedStyle): number {
+    let margin = 0
+    let parent = block
+    for (let depth = 0; depth < 32; depth++) {
+        const style = styleOf(parent)
+        if (parseFloat(style.borderTopWidth) > 0 || parseFloat(style.paddingTop) > 0 || startsFormattingContext(style)) break
+        let child: Element | null = null
+        for (const node of Array.from(parent.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                if (node.textContent?.trim()) break
+                continue
+            }
+            if (!(node instanceof Element)) continue
+            const childStyle = styleOf(node)
+            if (childStyle.display === 'none' || /^(?:absolute|fixed)$/.test(childStyle.position) || childStyle.float && childStyle.float !== 'none') continue
+            child = node
+            break
+        }
+        if (!child) break
+        const childStyle = styleOf(child)
+        if (!/^(?:block|list-item|table|flex|grid|flow-root)$/.test(childStyle.display)) break
+        margin = Math.max(margin, parseFloat(childStyle.marginTop) || 0)
+        parent = child
+    }
+    return margin
+}
+
+async function drawClipboardBlock(block: HTMLElement, width: number, height: number): Promise<string> {
+    await waitForClipboardBlockImages(block)
+    const htmlToImage = await import('html-to-image')
+    // Keep children's collapsed top margin out of the picture: an equal
+    // negative top margin on the drawn box collapses with it to zero, so the box
+    // and everything placed against it (an overlaid badge) start at the top as
+    // in the chat; the bottom margin falls below the canvas.
+    const pushed = /^(?:block|list-item)$/.test(getComputedStyle(block).display) ? marginThroughTop(block) : 0
+    const canvas = await htmlToImage.toCanvas(block, {
+        width, height, canvasWidth: width, canvasHeight: height,
+        pixelRatio: CLIPBOARD_IMAGE_DENSITY, skipAutoScale: true,
+        style: pushed > 0 ? { margin: '0', marginTop: `${-pushed}px` } : { margin: '0' },
+    })
+    return encodeClipboardCanvas(canvas)
 }
 
 /**
@@ -683,6 +868,10 @@ export async function buildPortableChatFragment(
         rasterizeCover?: (url: string, width: number, height: number, position: string) => Promise<string>
         rasterizeBackground?: (url: string, width: number, height: number, fit: 'cover' | 'contain', position: string) => Promise<string>
         shrinkImage?: (dataUrl: string, boxWidth: number, boxHeight: number) => Promise<string>
+        unboardable?: CopyUnboardable
+        drawUnboardable?: (block: HTMLElement, width: number, height: number) => Promise<string>
+        /** Shared across the bodies of one text log. */
+        drawnBlocks?: Map<string, Promise<string>>
         /** The browser's default style for an element's tag (createDefaultStyles). */
         getDefaultStyle?: (element: Element) => CSSStyleDeclaration | null
     } = {},
@@ -746,6 +935,9 @@ export async function buildPortableChatFragment(
     // part of the reply).
     const hidden = new Set<Element>()
     const hiddenClones: Element[] = []
+    const visible = new Set<Element>()
+    const pseudoContent = new Set<Element>()
+    const replacements = new Map<Element, HTMLElement>()
     for (let index = 0; index < Math.min(sources.length, clones.length); index++) {
         const source = sources[index]
         const clone = clones[index]
@@ -762,6 +954,7 @@ export async function buildPortableChatFragment(
             hiddenClones.push(clone)
             continue
         }
+        visible.add(source)
         const closedDetails = source instanceof HTMLDetailsElement && !source.open
         if (closedDetails || computed.getPropertyValue('content-visibility') === 'hidden') {
             const summary = closedDetails ? source.querySelector(':scope > summary') : null
@@ -780,6 +973,7 @@ export async function buildPortableChatFragment(
                     const decoration = snapshotPseudoElement(style)
                     if (!decoration) continue
                     hasPseudo = true
+                    pseudoContent.add(source)
                     if (pseudo === '::before') clone.prepend(decoration)
                     else clone.append(decoration)
                     const pseudoBackground = style.backgroundImage
@@ -825,6 +1019,7 @@ export async function buildPortableChatFragment(
                                 image.style.marginRight = 'auto'
                             }
                             clone.replaceWith(image)
+                            replacements.set(clone, image)
                             return
                         }
                     } catch { /* falls back to the background below */ }
@@ -878,6 +1073,42 @@ export async function buildPortableChatFragment(
     defaultStyles.dispose()
     for (const clone of hiddenClones) clone.remove()
 
+    const selectedBlocks: Array<{ source: HTMLElement, clone: HTMLElement, width: number, height: number }> = []
+    if (options.unboardable === 'image') {
+        const overlays = overlayBlocks(sourceRoot, visible, styleOf)
+        const candidates = new Set<HTMLElement>()
+        for (const source of sources) {
+            if (source === sourceRoot || !(source instanceof HTMLElement) || !visible.has(source)) continue
+            const computed = styleOf(source)
+            const box = source.getBoundingClientRect()
+            const pictureOnly = !!computed.backgroundImage && computed.backgroundImage !== 'none'
+                && !!backgroundPictureOf(source, computed, !!textContentFlags.get(source), pseudoContent.has(source))
+            const hasContent = /^(IMG|VIDEO|CANVAS|SVG)$/.test(source.tagName) || !!textContentFlags.get(source) || !!source.children.length || pseudoContent.has(source)
+                || !!computed.backgroundColor && computed.backgroundColor !== 'transparent' && !/rgba?\([^)]*,\s*0\)/.test(computed.backgroundColor)
+            if (shouldRasterizeBoardBlock({
+                width: box.width, height: box.height, hasVisibleContent: hasContent,
+                overlappingAbsolute: overlays.has(source),
+                backgroundImage: computed.backgroundImage, pictureOnlyBackground: pictureOnly,
+                opacity: computed.opacity, filter: computed.filter,
+                backdropFilter: computed.getPropertyValue('backdrop-filter'),
+                mixBlendMode: computed.mixBlendMode, clipPath: computed.clipPath,
+                maskImage: computed.getPropertyValue('mask-image'), writingMode: computed.writingMode,
+                transform: computed.transform, overflowX: computed.overflowX,
+                scrollWidth: source.scrollWidth, clientWidth: source.clientWidth,
+            })) candidates.add(source)
+        }
+        for (let index = 1; index < sources.length; index++) {
+            const source = sources[index]
+            const clone = clones[index]
+            if (!(source instanceof HTMLElement) || !(clone instanceof HTMLElement) || !candidates.has(source)) continue
+            let parent = source.parentElement
+            while (parent && parent !== sourceRoot && !candidates.has(parent)) parent = parent.parentElement
+            if (parent && candidates.has(parent)) continue
+            const box = source.getBoundingClientRect()
+            selectedBlocks.push({ source, clone, width: box.width, height: box.height })
+        }
+    }
+
     for (const task of assetTasks) await task()
     // Rich status widgets often draw their icons as inline SVG. Third-party
     // editors sanitize SVG markup, so paste a bitmap of each visible icon.
@@ -898,6 +1129,36 @@ export async function buildPortableChatFragment(
             image.style.maxWidth = boardMaxWidth(box.width)
             clone.replaceWith(image)
         } catch { /* preserve SVG markup if the browser cannot rasterize it */ }
+    }
+    // 2026-11-14: draw only effects a stored Arca post cannot express. A failed
+    // draw leaves the ordinary portable subtree in place, including its text.
+    const drawnBlocks = options.drawnBlocks ?? new Map<string, Promise<string>>()
+    for (const { source, clone, width, height } of selectedBlocks) {
+        const target = replacements.get(clone) ?? clone
+        if (!cloneRoot.contains(target)) continue
+        const key = `${source.outerHTML}\u0000${width}x${height}`
+        let pending = drawnBlocks.get(key)
+        if (!pending) {
+            pending = (options.drawUnboardable ?? drawClipboardBlock)(source, width, height)
+            drawnBlocks.set(key, pending)
+        }
+        try {
+            const dataUrl = await pending
+            if (!/^data:image\/(?:webp|png);base64,/i.test(dataUrl)) throw new Error('Clipboard block image was empty')
+            const image = target.ownerDocument.createElement('img')
+            image.src = dataUrl
+            image.alt = (source.innerText || source.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 300)
+            const style = styleOf(source)
+            image.style.display = style.display.startsWith('inline') ? style.display : 'block'
+            for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+                image.style[`margin${side}`] = target.style[`margin${side}`] || style[`margin${side}`]
+            }
+            image.style.width = `${width}px`
+            image.style.maxWidth = boardMaxWidth(width)
+            image.style.height = 'auto'
+            image.style.borderRadius = style.borderRadius
+            target.replaceWith(image)
+        } catch { /* keep the unfolded block */ }
     }
     cloneRoot.querySelectorAll('script, style, link, [data-risu-copy-ignore]').forEach((node) => node.remove())
     replaceFormControls(cloneRoot)

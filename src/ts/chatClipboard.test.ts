@@ -1,10 +1,132 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BOARD_POST_SAFE_BYTES, backgroundPictureOf, boardLonghands, boardPostBytes, boardSafeStyles, buildPortableChatFragment, portableStyle, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { BOARD_POST_SAFE_BYTES, backgroundPictureOf, boardCopyWrapper, boardLonghands, boardPostBytes, boardSafeStyles, buildPortableChatFragment, portableStyle, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, marginThroughTop, shouldRasterizeBoardBlock, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
+})
+
+describe('Arca copy choices', () => {
+    const block = { width: 240, height: 120, hasVisibleContent: true }
+
+    it('uses the card width by default or the measured shown width', () => {
+        expect(boardCopyWrapper('Body', '#fff', '#000')).toContain('max-width: 600px')
+        expect(boardCopyWrapper('Body', '#fff', '#000', 'card', 720)).toContain('max-width: 600px')
+        // The body's width plus the card's side padding.
+        expect(boardCopyWrapper('Body', '#fff', '#000', 'shown', 720.4)).toContain('max-width: min(100%, 752px)')
+    })
+
+    it('finds the top margin children push out of a box, so a drawn box starts where the chat shows it', () => {
+        const at = (html: string) => {
+            document.body.innerHTML = html
+            return marginThroughTop(document.body.firstElementChild!)
+        }
+        expect(at('<div><img style="display:block;margin-top:34px"></div>')).toBe(34)
+        expect(at('<div>\n<div><p style="margin-top:21px">text</p></div></div>')).toBe(21)
+        expect(at('<div><span style="position:absolute">x</span><p style="margin-top:12px">text</p></div>')).toBe(12)
+        // Padding, a border, text first, an inline child or a flex box keep the margin inside.
+        expect(at('<div style="padding-top:1px"><p style="margin-top:21px">text</p></div>')).toBe(0)
+        expect(at('<div style="border-top:1px solid red"><p style="margin-top:21px">text</p></div>')).toBe(0)
+        expect(at('<div>lead<p style="margin-top:21px">text</p></div>')).toBe(0)
+        expect(at('<div><img style="margin-top:34px"></div>')).toBe(0)
+        expect(at('<div style="display:flex"><p style="margin-top:21px">text</p></div>')).toBe(0)
+    })
+
+    it('selects only blocks with an effect Arca removes', () => {
+        expect(shouldRasterizeBoardBlock(block)).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, overlappingAbsolute: true })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, overlappingAbsolute: true, lonePositionedChild: true })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, backgroundImage: 'url(x.png)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, backgroundImage: 'url(x.png)', pictureOnlyBackground: true })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, backgroundImage: 'url(x.png)', pictureOnlyBackground: true, opacity: '0.5' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, opacity: '0.5' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, opacity: '0.5', hasVisibleContent: false })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, filter: 'blur(2px)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, backdropFilter: 'blur(2px)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, mixBlendMode: 'multiply' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, clipPath: 'circle(50%)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, maskImage: 'url(mask.png)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, writingMode: 'vertical-rl' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, writingMode: 'vertical-lr' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, writingMode: 'sideways-rl' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, transform: 'rotate(8deg)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, transform: 'scale(1.2)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, transform: 'skewX(8deg)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, transform: 'translateX(-50%)' })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, transform: 'matrix(1, 0, 0, 1, 20, 10)' })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, transform: 'matrix(1.2, 0, 0, 1, 20, 10)' })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, overflowX: 'auto', scrollWidth: 301, clientWidth: 240 })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, overflowX: 'scroll', scrollWidth: 301, clientWidth: 240 })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, overflowX: 'hidden', scrollWidth: 301, clientWidth: 240 })).toBe(true)
+        expect(shouldRasterizeBoardBlock({ ...block, overflowX: 'auto', scrollWidth: 241, clientWidth: 240 })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, opacity: '0.5', isRoot: true })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, opacity: '0.5', height: 4001 })).toBe(false)
+        expect(shouldRasterizeBoardBlock({ ...block, opacity: '0.5', width: 0 })).toBe(false)
+    })
+
+    it('draws a qualifying subtree, retains margins, and keeps the rest as text', async () => {
+        const root = document.createElement('span')
+        root.innerHTML = '<div style="opacity:0.5;margin:8px auto 12px;width:240px">Panel</div><p>Ordinary text</p>'
+        document.body.append(root)
+        const panel = root.firstElementChild as HTMLElement
+        vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({ width: 240, height: 120 } as DOMRect)
+        const drawUnboardable = vi.fn(async () => 'data:image/png;base64,PANEL')
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { unboardable: 'image', drawUnboardable }), 'text/html')
+        expect(drawUnboardable).toHaveBeenCalledWith(panel, 240, 120)
+        const image = copy.querySelector('img')!
+        expect(image.src).toBe('data:image/png;base64,PANEL')
+        expect(image.alt).toBe('Panel')
+        expect(image.style.marginLeft).toBe('auto')
+        expect(image.style.marginTop).toBe('8px')
+        expect(image.style.maxWidth).toBe('min(100%, 240px)')
+        expect(copy.body.textContent).toContain('Ordinary text')
+    })
+
+    it('leaves the unfolded subtree when drawing fails or the choice is off', async () => {
+        const root = document.createElement('span')
+        root.innerHTML = '<div style="opacity:0.5">Panel</div>'
+        document.body.append(root)
+        vi.spyOn(root.firstElementChild!, 'getBoundingClientRect').mockReturnValue({ width: 240, height: 120 } as DOMRect)
+        const drawUnboardable = vi.fn(async () => { throw new Error('canvas unavailable') })
+        const failed = await buildPortableChatFragment(root, { unboardable: 'image', drawUnboardable })
+        expect(failed).toContain('Panel')
+        expect(failed).not.toContain('<img')
+        const unfolded = await buildPortableChatFragment(root, { unboardable: 'unfold', drawUnboardable })
+        const defaultCopy = await buildPortableChatFragment(root, { drawUnboardable })
+        expect(unfolded).toBe(defaultCopy)
+        expect(drawUnboardable).toHaveBeenCalledTimes(1)
+    })
+
+    it('draws the containing frame for an overlapping absolute child', async () => {
+        const root = document.createElement('span')
+        root.innerHTML = '<div style="position:relative"><div>Picture</div><span style="position:absolute">Badge</span></div>'
+        document.body.append(root)
+        const frame = root.firstElementChild as HTMLElement
+        const picture = frame.firstElementChild as HTMLElement
+        const badge = frame.lastElementChild as HTMLElement
+        vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 240, bottom: 120, width: 240, height: 120 } as DOMRect)
+        vi.spyOn(picture, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 240, bottom: 120, width: 240, height: 120 } as DOMRect)
+        vi.spyOn(badge, 'getBoundingClientRect').mockReturnValue({ left: 10, top: 10, right: 60, bottom: 30, width: 50, height: 20 } as DOMRect)
+        const drawUnboardable = vi.fn(async () => 'data:image/png;base64,FRAME')
+        const copy = await buildPortableChatFragment(root, { unboardable: 'image', drawUnboardable })
+        expect(drawUnboardable).toHaveBeenCalledWith(frame, 240, 120)
+        expect(copy).toContain('data:image/png;base64,FRAME')
+        expect(copy).not.toContain('Badge</span>')
+    })
+
+    it('reuses the same drawing for repeated HTML at the same size', async () => {
+        const root = document.createElement('span')
+        root.innerHTML = '<div style="opacity:0.5">Panel</div><div style="opacity:0.5">Panel</div>'
+        document.body.append(root)
+        for (const panel of Array.from(root.children)) {
+            vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({ width: 240, height: 120 } as DOMRect)
+        }
+        const drawUnboardable = vi.fn(async () => 'data:image/png;base64,PANEL')
+        const copy = await buildPortableChatFragment(root, { unboardable: 'image', drawUnboardable })
+        expect(drawUnboardable).toHaveBeenCalledTimes(1)
+        expect((copy.match(/data:image\/png;base64,PANEL/g) ?? []).length).toBe(2)
+    })
 })
 
 describe('portable chat clipboard assets', () => {

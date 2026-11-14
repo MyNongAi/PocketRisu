@@ -1757,6 +1757,8 @@ export interface Database{
     nodeOnlyHideMessageTtsButton?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
+    nodeOnlyCopyWidth?: 'card' | 'shown'
+    nodeOnlyCopyUnboardable?: 'unfold' | 'image'
     nodeOnlyLogImageWidth?: number
     /** Percent; the log is laid out at width / scale and drawn at this pixel ratio. */
     nodeOnlyLogImageTextScale?: number
@@ -2324,6 +2326,8 @@ export interface themePreset{
     nodeOnlyHideMessageTtsButton?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
+    nodeOnlyCopyWidth?: 'card' | 'shown'
+    nodeOnlyCopyUnboardable?: 'unfold' | 'image'
     nodeOnlyLogImageWidth?: number
     /** Percent; the log is laid out at width / scale and drawn at this pixel ratio. */
     nodeOnlyLogImageTextScale?: number

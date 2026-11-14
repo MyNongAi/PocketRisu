@@ -11,6 +11,7 @@ import { DBState, selIdState } from '../stores.svelte'
 import { getFileSrc } from '../globalApi.svelte'
 import {
     boardPostBytes,
+    boardCopyWrapper,
     boardSafeStyles,
     buildPortableChatFragment,
     fetchClipboardDataUrl,
@@ -66,15 +67,21 @@ export async function renderLogText(options: RenderLogOptions): Promise<Rendered
         }
         const sections: string[] = []
         const plain: string[] = []
+        const drawnBlocks = new Map<string, Promise<string>>()
+        let widestBody = 0
         onProgress?.('text', 0, blocks.length)
         for (const [done, { index, block }] of blocks.entries()) {
             if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
             const body = block.querySelector<HTMLElement>('span.chattext')
             if (!body) continue
+            widestBody = Math.max(widestBody, body.getBoundingClientRect().width)
             const isUser = index >= 0 && chat?.message?.[index]?.role === 'user'
             const name = isUser ? persona.name : character?.name ?? ''
             const icon = await iconFor(isUser ? persona.icon : character?.image)
-            const doc = new DOMParser().parseFromString(await buildPortableChatFragment(body), 'text/html')
+            const doc = new DOMParser().parseFromString(await buildPortableChatFragment(body, {
+                unboardable: db.nodeOnlyCopyUnboardable,
+                drawnBlocks,
+            }), 'text/html')
             doc.querySelectorAll('img').forEach((img) => {
                 img.setAttribute('alt', img.getAttribute('alt') || 'from PocketRisu')
             })
@@ -92,11 +99,7 @@ export async function renderLogText(options: RenderLogOptions): Promise<Rendered
             onProgress?.('text', done + 1, blocks.length)
         }
         if (sections.length === 0) throw new Error(language.logCapture.empty)
-        const html = hexColors(`<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${textColor}; line-height: 1.6; max-width: 600px; margin: 0.5rem auto; background: ${root.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 8px; overflow: hidden;">
-<div style="padding: 12px 16px;">
-${sections.join('\n')}
-</div>
-</div>`)
+        const html = hexColors(boardCopyWrapper(sections.join('\n'), textColor, root.getPropertyValue('--risu-theme-bgcolor'), db.nodeOnlyCopyWidth, widestBody))
         return { html, text: plain.join('\n\n'), bytes: boardPostBytes(html) }
     } finally {
         cleanup()

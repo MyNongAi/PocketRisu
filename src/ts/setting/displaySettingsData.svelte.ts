@@ -336,6 +336,24 @@ export const displayOtherChatItems: SettingItem[] = [
     },
     { id: 'display.logCaptureButton', type: 'check', labelKey: 'logCaptureButton', helpKey: 'logCaptureButton', bindKey: 'nodeOnlyLogCaptureButton', keywords: ['log', 'image', 'capture', 'screenshot', 'scissors', '로그', '가위', '캡처'] },
     {
+        id: 'display.copyWidth', type: 'select', labelKey: 'copyWidth', helpKey: 'copyWidth', bindKey: 'nodeOnlyCopyWidth',
+        getValue: (db) => db.nodeOnlyCopyWidth ?? 'card',
+        options: { selectOptions: [
+            { value: 'card', labelKey: 'copyWidthCard' },
+            { value: 'shown', labelKey: 'copyWidthShown' },
+        ] },
+        keywords: ['copy', 'width', 'log', '복사', '폭'],
+    },
+    {
+        id: 'display.copyUnboardable', type: 'select', labelKey: 'copyUnboardable', helpKey: 'copyUnboardable', bindKey: 'nodeOnlyCopyUnboardable',
+        getValue: (db) => db.nodeOnlyCopyUnboardable ?? 'unfold',
+        options: { selectOptions: [
+            { value: 'unfold', labelKey: 'copyUnboardableUnfold' },
+            { value: 'image', labelKey: 'copyUnboardableImage' },
+        ] },
+        keywords: ['copy', 'image', 'arca', '복사', '그림', '아카'],
+    },
+    {
         id: 'display.logImageWidth',
         type: 'slider',
         labelKey: 'logImageWidth',
