@@ -101,6 +101,8 @@ export function extractCssUrls(value: string): string[] {
 export const CLIPBOARD_IMAGE_MAX_EDGE = 1600
 const CLIPBOARD_IMAGE_DENSITY = 2
 const CLIPBOARD_WEBP_QUALITY = 0.85
+// Arca uploads only these types; a pasted AVIF was removed within 15 s (2026-11-14).
+const BOARD_UPLOADED_IMAGE_TYPES = /^(?:jpe?g|png|gif|webp)$/i
 
 /**
  * The max-width an image of a copy carries: no wider than it was shown.
@@ -142,32 +144,40 @@ function encodeClipboardCanvas(canvas: HTMLCanvasElement): string {
 }
 
 /**
- * The embedded image `dataUrl` redrawn at clipboardImageSize as WebP, when
- * that is smaller. GIF, SVG and animated PNG/WebP stay as they are. Without
- * createImageBitmap (or on any failure) the image is left as it is.
+ * The embedded image `dataUrl` redrawn at clipboardImageSize as WebP. PNG,
+ * JPEG and WebP change only when smaller; other redrawable types always
+ * change. GIF, SVG and animated PNG/WebP stay as they are. If
+ * createImageBitmap cannot decode a type that must change, try an <img>;
+ * if both decoders fail, leave the original image as it is.
  */
 export async function shrinkClipboardImage(dataUrl: string, boxWidth = 0, boxHeight = 0): Promise<string> {
-    if (!/^data:image\/(?:png|jpe?g|webp|bmp|avif)[;,]/i.test(dataUrl) || isAnimatedImageDataUrl(dataUrl)) return dataUrl
-    if (typeof createImageBitmap !== 'function') return dataUrl
+    const match = /^data:image\/(png|jpe?g|webp|bmp|avif)[;,]/i.exec(dataUrl)
+    if (!match || isAnimatedImageDataUrl(dataUrl)) return dataUrl
+    const mustConvert = !BOARD_UPLOADED_IMAGE_TYPES.test(match[1])
+    let bitmap: ImageBitmap | undefined
     try {
-        const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob())
-        try {
-            const { width, height } = clipboardImageSize(bitmap.width, bitmap.height, boxWidth, boxHeight)
-            const canvas = document.createElement('canvas')
-            canvas.width = width
-            canvas.height = height
-            const context = canvas.getContext('2d')
-            if (!context) return dataUrl
-            context.imageSmoothingEnabled = true
-            context.imageSmoothingQuality = 'high'
-            context.drawImage(bitmap, 0, 0, width, height)
-            const encoded = encodeClipboardCanvas(canvas)
-            return encoded.length < dataUrl.length ? encoded : dataUrl
-        } finally {
-            bitmap.close()
+        if (typeof createImageBitmap === 'function') {
+            try { bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob()) }
+            catch { if (!mustConvert) return dataUrl }
         }
+        if (!bitmap && !mustConvert) return dataUrl
+        const fallback = bitmap ? null : await loadClipboardImage(dataUrl)
+        const image = bitmap ?? fallback!
+        const { width, height } = clipboardImageSize(bitmap?.width ?? fallback!.naturalWidth, bitmap?.height ?? fallback!.naturalHeight, boxWidth, boxHeight)
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const context = canvas.getContext('2d')
+        if (!context) return dataUrl
+        context.imageSmoothingEnabled = true
+        context.imageSmoothingQuality = 'high'
+        context.drawImage(image, 0, 0, width, height)
+        const encoded = encodeClipboardCanvas(canvas)
+        return mustConvert || encoded.length < dataUrl.length ? encoded : dataUrl
     } catch {
         return dataUrl
+    } finally {
+        bitmap?.close()
     }
 }
 

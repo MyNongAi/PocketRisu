@@ -415,6 +415,20 @@ describe('clipboard image size (board post limits)', () => {
         expect(await shrinkClipboardImage('data:image/gif;base64,R0lGOD', 80, 80)).toBe('data:image/gif;base64,R0lGOD')
     })
 
+    it('converts AVIF for the board even when WebP is larger, but keeps a larger PNG and GIF', async () => {
+        const redrawn = 'data:image/webp;base64,REDRAW-LARGER-THAN-INPUT'
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(new Blob(['image']))))
+        const createImageBitmap = vi.fn(async () => ({ width: 800, height: 1000, close: vi.fn() } as unknown as ImageBitmap))
+        vi.stubGlobal('createImageBitmap', createImageBitmap)
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D)
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(redrawn)
+
+        expect(await shrinkClipboardImage('data:image/avif;base64,AA==', 400, 400)).toBe(redrawn)
+        expect(await shrinkClipboardImage('data:image/png;base64,AA==', 400, 400)).toBe('data:image/png;base64,AA==')
+        expect(await shrinkClipboardImage('data:image/gif;base64,R0lGOD', 400, 400)).toBe('data:image/gif;base64,R0lGOD')
+        expect(createImageBitmap).toHaveBeenCalledTimes(2)
+    })
+
     it('shrinks each image and background to the box it is shown in', async () => {
         const root = document.createElement('section')
         root.innerHTML = '<img src="data:image/png;base64,PORTRAIT"><div style="background-image:url(/frame.png)">text</div>'
