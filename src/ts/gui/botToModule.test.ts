@@ -15,7 +15,20 @@ vi.mock('src/ts/characters', () => ({ createBlankChar: () => ({}) }))
 vi.mock('src/ts/process/modules', () => ({ addModuleToDatabase: (m: any) => mocks.added.push(m) }))
 vi.mock('src/ts/storage/database.svelte', () => ({ getDatabase: () => mocks.db }))
 
-import { convertBotToModule } from './botToModule'
+import { convertBotToModule, moduleDropBot } from './botToModule'
+
+describe('the bot a drag over a Module tab carries (PC split, 2026-11-15)', () => {
+    it("takes this sidebar's own bot drag, not its folder drag", () => {
+        expect(moduleDropBot({ kind: 'character', id: 'b1' }, null, true)).toBe('b1')
+        expect(moduleDropBot({ kind: 'folder', id: 'f1' }, { id: 'b2', over: false }, true)).toBeNull()
+    })
+
+    it('takes a bot lifted in another piece of the sidebar while the drag is a sidebar one', () => {
+        expect(moduleDropBot(null, { id: 'b2', over: false }, true)).toBe('b2')
+        expect(moduleDropBot(null, { id: 'b2', over: false }, false)).toBeNull()
+        expect(moduleDropBot(null, null, true)).toBeNull()
+    })
+})
 
 const bot = (over: Record<string, unknown> = {}) => ({
     type: 'character', chaId: 'b1', name: 'Mia', desc: 'desc', firstMessage: 'hi',

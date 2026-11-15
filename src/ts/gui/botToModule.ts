@@ -7,8 +7,31 @@ import { hydrateCharacterAssets } from 'src/ts/characterCards'
 import { convertCharacterToModule } from 'src/ts/interchangeability'
 import { addModuleToDatabase, type RisuModule } from 'src/ts/process/modules'
 import { getDatabase } from 'src/ts/storage/database.svelte'
+import { writable } from 'svelte/store'
 
 const converting = new Set<string>()
+
+// The bot lifted in any piece of the sidebar. In the PC split the bot list
+// ('rail') and the panel holding the Module tab are separate Sidebar
+// instances, each with its own drag state, so a bot lifted in the list never
+// lit the tab or reached it (the user's request, 2026-11-15). `over`: a touch
+// drag's finger is on a Module tab.
+export type LiftedBot = { id: string, over: boolean }
+export const liftedBot = writable<LiftedBot | null>(null)
+
+/**
+ * The bot a drag over a Module tab carries: this sidebar's own drag first,
+ * else one lifted in another piece of the sidebar (only while the browser
+ * drag is a sidebar one). null for a folder or anything else.
+ */
+export function moduleDropBot(
+    local: { kind: string, id: string } | null,
+    lifted: LiftedBot | null,
+    sidebarDrag: boolean,
+): string | null {
+    if (local) return local.kind === 'character' ? local.id : null
+    return sidebarDrag && lifted ? lifted.id : null
+}
 
 /** Bot `chaId` copied into a new module; null when it was not (said in a toast). */
 export async function convertBotToModule(chaId: string): Promise<RisuModule | null> {

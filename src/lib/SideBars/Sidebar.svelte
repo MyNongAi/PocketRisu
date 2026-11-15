@@ -31,7 +31,8 @@
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import { characterModuleLink as characterModuleLinkState } from "src/ts/gui/pairedModules";
     import { botHasModules, findModulesOfBot } from "src/ts/gui/pairFinder";
-    import { convertBotToModule } from "src/ts/gui/botToModule";
+    import { convertBotToModule, liftedBot, moduleDropBot } from "src/ts/gui/botToModule";
+    import { get } from "svelte/store";
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
@@ -394,9 +395,12 @@
   let currentDrag: DragData | null = $state(null)
   // A bot dragged onto the Module tab becomes a module (botToModule.ts):
   // the tab is outlined while a bot is lifted and lit while one is over it.
+  // A bot lifted in another piece of the sidebar (the PC split's bot list)
+  // arms this one's tab too (liftedBot).
   let touchBotDrag = $state(false)
   let moduleDropHover = $state(false)
-  let moduleDropArmed = $derived(currentDrag?.kind === 'character' || touchBotDrag)
+  let moduleDropArmed = $derived(currentDrag?.kind === 'character' || touchBotDrag || !!$liftedBot)
+  let moduleDropLit = $derived(moduleDropHover || !!$liftedBot?.over)
   // characterOrder index of each rendered top-level entry. The sidebar skips
   // hidden, trashed and (optionally) deactivated entries, so a rendered
   // position is not a characterOrder index; root drops translate through it.
@@ -896,6 +900,7 @@
     e.dataTransfer.setData('text/plain', '');
     e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, 'true');
     currentDrag = ind
+    if (ind.kind === 'character') liftedBot.set({ id: ind.id, over: false })
     const avatar = e.currentTarget.querySelector('.avatar')
     if(avatar){
       e.dataTransfer.setDragImage(avatar, 10, 10);
@@ -905,6 +910,7 @@
   const clearCurrentDrag = () => {
     currentDrag = null
     moduleDropHover = false
+    if (get(liftedBot)) liftedBot.set(null)
   }
 
   $effect(() => {
@@ -955,8 +961,14 @@
 
   const moduleDropTarget = (el: Element | null | undefined) => !!el?.closest('[data-module-drop]')
 
+  const draggedBotForModule = (e:DragEvent) => moduleDropBot(
+    getCurrentSidebarDrag(e),
+    get(liftedBot),
+    !!e.dataTransfer?.types.includes(RISU_SIDEBAR_DRAG_TYPE),
+  )
+
   const moduleTabDragOver = (e:DragEvent) => {
-    if(getCurrentSidebarDrag(e)?.kind !== 'character'){
+    if(!draggedBotForModule(e)){
       return
     }
     e.preventDefault()
@@ -966,14 +978,14 @@
   }
 
   const moduleTabDrop = (e:DragEvent) => {
-    const drag = getCurrentSidebarDrag(e)
-    if(drag?.kind !== 'character'){
+    const id = draggedBotForModule(e)
+    if(!id){
       return
     }
     e.preventDefault()
     e.stopPropagation()
     clearCurrentDrag()
-    void convertBotToModule(drag.id)
+    void convertBotToModule(id)
   }
 
   const preventAll = (e:DragEvent) => {
@@ -1030,6 +1042,7 @@
     touchDragTimer = window.setTimeout(() => {
       touchDragState = { data, element: el, ghost: null, highlighted: null }
       touchBotDrag = data.kind === 'character'
+      if (touchBotDrag) liftedBot.set({ id: data.id, over: false })
       el.style.opacity = '0.4'
       try { navigator.vibrate?.(30) } catch {}
 
@@ -1073,6 +1086,9 @@
     }
 
     moduleDropHover = touchBotDrag && moduleDropTarget(el)
+    // The tab under the finger may be another piece's (liftedBot).
+    const lifted = get(liftedBot)
+    if (touchBotDrag && lifted && lifted.over !== moduleDropHover) liftedBot.set({ ...lifted, over: moduleDropHover })
     if (!el || moduleDropHover) return
     const spacer = el.closest('[data-spacer-index]') as HTMLElement | null
     const item = el.closest('[data-drag-id]') as HTMLElement | null
@@ -1088,6 +1104,7 @@
 
   function cleanupTouchDrag() {
     if (touchDragTimer) { clearTimeout(touchDragTimer); touchDragTimer = 0 }
+    if (touchBotDrag) liftedBot.set(null)
     touchBotDrag = false
     moduleDropHover = false
     if (!touchDragState) return false
@@ -2451,7 +2468,7 @@
         ondragover={moduleTabDragOver}
         ondragleave={() => { moduleDropHover = false }}
         ondrop={moduleTabDrop}
-        class={"grow rounded-br-md transition-colors" + (moduleDropHover ? " bg-green-500/30 ring-2 ring-inset ring-green-400" : moduleDropArmed ? " ring-1 ring-inset ring-green-400/60" : "")}
+        class={"grow rounded-br-md transition-colors" + (moduleDropLit ? " bg-green-500/30 ring-2 ring-inset ring-green-400" : moduleDropArmed ? " ring-1 ring-inset ring-green-400/60" : "")}
         class:text-textcolor2={panelTab !== 'module' || (hasEditableCharacter && QuickSettings.index !== 2)}
         aria-pressed={panelTab === 'module' && (!hasEditableCharacter || QuickSettings.index === 2)}
       >{language.module}</button>
