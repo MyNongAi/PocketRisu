@@ -15,7 +15,9 @@ export async function convertBotToModule(chaId: string): Promise<RisuModule | nu
     if (!chaId || converting.has(chaId)) return null
     const char = getDatabase().characters.find((c) => c?.chaId === chaId)
     if (!char) return null
-    if (char.type !== 'character') {
+    // A bot's `type` is optional and often absent (an imported card); only a
+    // group chat from older data says 'group' (no longer in the types).
+    if ((char as { type?: string }).type === 'group') {
         notifyError(language.botToModuleGroup)
         return null
     }

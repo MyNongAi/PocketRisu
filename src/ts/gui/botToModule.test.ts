@@ -49,6 +49,16 @@ describe('a bot dropped on the Module tab (2026-11-08)', () => {
         expect(mocks.success).toHaveBeenCalledWith("made 'Mia'")
     })
 
+    it('takes a bot whose type is not set (the user report, 2026-11-15)', async () => {
+        const char = bot()
+        delete (char as Record<string, unknown>).type
+        mocks.db.characters = [char]
+        const module = await convertBotToModule('b1')
+        expect(module?.name).toBe('Mia')
+        expect(mocks.added).toEqual([module])
+        expect(mocks.error).not.toHaveBeenCalled()
+    })
+
     it('says a group chat cannot be one, and adds nothing', async () => {
         mocks.db.characters = [bot({ type: 'group' })]
         expect(await convertBotToModule('b1')).toBeNull()
