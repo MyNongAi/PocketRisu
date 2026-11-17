@@ -8,6 +8,19 @@ export function trimAssetName(str: string): string {
     return str.trim().replace(/[_ -.]/g, '')
 }
 
+/**
+ * A trimmed stem without its trailing number: the fuzzy candidates a large
+ * card still compares against. A card holding `name1` and `name2` of every
+ * picture, whose bot writes `name` (the user's NIKKE bot, 4,050 assets,
+ * 2026-11-18), found nothing once same-stem candidates were all a card over
+ * 2,000 assets got; the official app's full scan finds `name1` (1 edit).
+ * Null for a stem that is only digits.
+ */
+export function numberlessStem(trimmedStem: string): string | null {
+    const base = trimmedStem.replace(/\d+$/, '')
+    return base ? base : null
+}
+
 function assetStem(name: string): string {
     let stem = name.toLocaleLowerCase().trim()
     const first = stem[0]

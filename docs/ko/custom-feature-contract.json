@@ -19,7 +19,10 @@
         { "file": "src/ts/parser/assetNameMatch.ts", "contains": "permitsFuzzyName" },
         { "file": "src/ts/parser/parser.svelte.ts", "contains": "normalizedAssetCache" },
         { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "allPrefixes" },
-        { "file": "server/node/assetManifestStore.cjs", "contains": "normalizedAssetKey" }
+        { "file": "server/node/assetManifestStore.cjs", "contains": "normalizedAssetKey" },
+        { "file": "src/ts/parser/assetNameMatch.ts", "contains": "export function numberlessStem(" },
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "fuzzyIndex.set(NUMBERED_KEY + base, numbered)" },
+        { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "loaded.prepared.byNumberlessStem.get(base)" }
       ],
       "regressionTests": [
         "src/ts/parser/assetNameMatch.test.ts",

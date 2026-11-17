@@ -133,4 +133,24 @@ describe('resolveNamesLocally priority (mirror of the server suite)', () => {
         })
         expect(resolveNamesLocally(owners, ['bulk-near-miss'], 4)!.resolved).toEqual({})
     })
+
+    it('finds a numbered variant on a large manifest when the name has no number or a wrong one (2026-11-18)', () => {
+        // A card over 2,000 assets holding two numbered copies of every picture
+        // whose bot writes the name without the number (the user's NIKKE bot).
+        const items: AssetManifestTuple[] = []
+        for (let index = 0; index < 1_100; index++) {
+            items.push([`anis_pose${index}_casual1.webp`, `assets/p${index}-1`, 'webp'])
+            items.push([`anis_pose${index}_casual2.webp`, `assets/p${index}-2`, 'webp'])
+        }
+        const owners: ResolveOwners = [{ manifestId: seedManifest(items), fuzzy: true }]
+
+        const result = resolveNamesLocally(owners, ['anis_pose7_casual', 'anis_pose7_casual5'], 4)!
+        expect(result.resolved).toEqual({
+            anis_pose7_casual: 'assets/p7-1',
+            anis_pose7_casual5: 'assets/p7-1',
+        })
+        expect(result.fuzzy.sort()).toEqual(['anis_pose7_casual', 'anis_pose7_casual5'])
+        // Another picture's name still finds nothing.
+        expect(resolveNamesLocally(owners, ['anis_unknown_casual'], 4)!.resolved).toEqual({})
+    })
 })

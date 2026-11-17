@@ -4,7 +4,7 @@ import { appVer, getCurrentCharacter, getDatabase, type Chat, type Database, typ
 import { DBState, selIdState } from '../stores.svelte';
 import { aiWatermarkingLawApplies, getFileSrc, prefetchAssetManifests, resolvePrioritizedAssetManifestNames } from '../globalApi.svelte';
 import { hydrateAssetListsForCbs } from './assetListHydration';
-import { addAssetName, normalizedAssetKey, permitsFuzzyName, trimAssetName, type AssetNameIndex } from './assetNameMatch';
+import { addAssetName, normalizedAssetKey, numberlessStem, permitsFuzzyName, trimAssetName, type AssetNameIndex } from './assetNameMatch';
 import { isNodeServer } from "src/ts/platform"
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVar.svelte';
 import { processScriptFull } from '../process/scripts';
@@ -424,9 +424,17 @@ function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths, normalizedInd
         addAssetName(normalizedIndex, key, key)
         if(fuzzyIndex){
             const stem = trimmer(key)
+            const candidate = { name: key, path: asset[1], ext: asset[2] }
             const bucket = fuzzyIndex.get(stem) ?? []
-            bucket.push({ name: key, path: asset[1], ext: asset[2] })
+            bucket.push(candidate)
             fuzzyIndex.set(stem, bucket)
+            // The same picture under another number (numberlessStem).
+            const base = numberlessStem(stem)
+            if (base !== null) {
+                const numbered = fuzzyIndex.get(NUMBERED_KEY + base) ?? []
+                numbered.push(candidate)
+                fuzzyIndex.set(NUMBERED_KEY + base, numbered)
+            }
         }
     }
 }
@@ -479,7 +487,10 @@ type AssetPaths = {[key:string]:{
 }}
 
 type FuzzyAssetCandidate = { name: string, path: string, ext?: string }
+// Keyed by trimmed stem, and by NUMBERED_KEY + the stem without its trailing
+// number (numberlessStem); a trimmed stem never holds the NUL.
 type FuzzyAssetIndex = Map<string, FuzzyAssetCandidate[]>
+const NUMBERED_KEY = '\u0000'
 
 let assetsCache: AssetPaths | null = null
 let emoAssetsCache: AssetPaths | null = null
@@ -759,9 +770,12 @@ function getClosestMatch(
 
     const trimmedName = trimmer(name)
     // Large cards must not compare every macro against every asset. Same-stem
-    // candidates cover the common extension mismatch; small legacy lists keep
-    // the broad fuzzy behavior for compatibility.
+    // candidates cover the common extension mismatch, and the same stem under
+    // another trailing number a missing or wrong variant number
+    // (numberlessStem); small legacy lists keep the broad fuzzy behavior for
+    // compatibility.
     const indexed = fuzzyIndex?.get(trimmedName)
+    const base = numberlessStem(trimmedName)
     const candidates: FuzzyAssetCandidate[] = indexed?.length
         ? indexed
         : fuzzyCount <= 2_000
@@ -770,7 +784,7 @@ function getClosestMatch(
                 path: asset[1],
                 ext: asset[2],
             }))
-            : []
+            : (base !== null ? fuzzyIndex?.get(NUMBERED_KEY + base) : undefined) ?? []
 
     for(const candidate of candidates) {
         if (prefixes && !permitsFuzzyName(name, candidate.name, prefixes)) continue

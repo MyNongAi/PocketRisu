@@ -1,7 +1,7 @@
 import { getCachedFullAssetManifest } from './assetManifestCache'
 import type { AssetManifestTuple, AssetNameResolution } from './nodeStorage'
 import type { ResolveOwners } from './assetNameResolver'
-import { addAssetName, normalizedAssetKey, permitsFuzzyName, trimAssetName, type AssetNameIndex } from '../parser/assetNameMatch'
+import { addAssetName, normalizedAssetKey, numberlessStem, permitsFuzzyName, trimAssetName, type AssetNameIndex } from '../parser/assetNameMatch'
 
 // Client-side mirror of the server's resolveNames (assetManifestStore.cjs).
 //
@@ -46,6 +46,8 @@ const LARGE_MANIFEST_FUZZY_LIMIT = 2_000
 type PreparedManifest = {
     exact: Map<string, string>
     byTrimmedStem: Map<string, AssetManifestTuple[]>
+    /** By the trimmed stem without its trailing number (numberlessStem). */
+    byNumberlessStem: Map<string, AssetManifestTuple[]>
     normalized: AssetNameIndex<string>
 }
 const preparedManifestCache = new WeakMap<AssetManifestTuple[], PreparedManifest>()
@@ -56,6 +58,7 @@ function prepareManifest(items: AssetManifestTuple[]): PreparedManifest {
 
     const exact = new Map<string, string>()
     const byTrimmedStem = new Map<string, AssetManifestTuple[]>()
+    const byNumberlessStem = new Map<string, AssetManifestTuple[]>()
     const normalized: AssetNameIndex<string> = { normalized: new Map(), prefixes: new Set() }
     for (const item of items) {
         const key = item[0].toLocaleLowerCase()
@@ -65,8 +68,14 @@ function prepareManifest(items: AssetManifestTuple[]): PreparedManifest {
         const bucket = byTrimmedStem.get(stem) ?? []
         bucket.push(item)
         byTrimmedStem.set(stem, bucket)
+        const base = numberlessStem(stem)
+        if (base !== null) {
+            const numbered = byNumberlessStem.get(base) ?? []
+            numbered.push(item)
+            byNumberlessStem.set(base, numbered)
+        }
     }
-    const prepared = { exact, byTrimmedStem, normalized }
+    const prepared = { exact, byTrimmedStem, byNumberlessStem, normalized }
     preparedManifestCache.set(items, prepared)
     return prepared
 }
@@ -138,11 +147,17 @@ export function resolveNamesLocally(
             if (!loaded.fuzzy) continue
             // PocketRisu cards can carry tens of thousands of assets. Preserve
             // broad legacy fuzzy matching for ordinary cards, but on a large
-            // manifest only consider the same normalized filename stem. This
-            // keeps extension/separator compatibility without an O(names ×
-            // every asset) Levenshtein scan on the render path.
+            // manifest only consider the same normalized filename stem, or that
+            // stem under another trailing number (numberlessStem: `name` for
+            // `name1`/`name2`, 2026-11-18). This keeps extension/separator and
+            // variant-number compatibility without an O(names × every asset)
+            // Levenshtein scan on the render path. (The server resolver scans
+            // every asset and finds these as well.)
+            const base = numberlessStem(trimmedName)
             const candidates = loaded.items.length > LARGE_MANIFEST_FUZZY_LIMIT
-                ? loaded.prepared.byTrimmedStem.get(trimmedName) ?? []
+                ? loaded.prepared.byTrimmedStem.get(trimmedName)
+                    ?? (base !== null ? loaded.prepared.byNumberlessStem.get(base) : undefined)
+                    ?? []
                 : loaded.items
             for (const item of candidates) {
                 if (!permitsFuzzyName(name, item[0], allPrefixes)) continue
