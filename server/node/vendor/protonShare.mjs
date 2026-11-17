@@ -37930,11 +37930,15 @@ async function openShare(token, password, customPassword = "") {
     passphrase: sharePassphrase.data
   });
   const authHeaders = { "x-pm-uid": auth.UID, authorization: `Bearer ${auth.AccessToken}` };
-  const rootMeta = (await api(`drive/urls/${token}`, { headers: authHeaders })).Token;
+  const volumeId = auth.Share.VolumeID;
+  const rootLinkId = auth.Share.LinkID;
+  const rootItem = (await fetchLinks({ volumeId, authHeaders }, [rootLinkId])).get(rootLinkId);
+  const rootMeta = rootLinkMeta(rootItem);
+  if (!rootMeta) throw new ProtonShareError("Proton did not return the shared item");
   const rootName = await decryptName(rootMeta.Name, shareKey);
   return {
     authHeaders,
-    volumeId: auth.Share.VolumeID,
+    volumeId,
     shareKey,
     rootMeta,
     rootName,
@@ -37986,6 +37990,16 @@ async function decryptName(armored, parentKey) {
     verificationKeys: []
   });
   return out.data;
+}
+function rootLinkMeta(item) {
+  const link = item?.Link ?? item;
+  if (!link?.LinkID) return null;
+  return {
+    ...link,
+    LinkType: link.Type,
+    Size: item?.File?.ActiveRevision?.EncryptedSize ?? item?.File?.TotalEncryptedSize ?? link.Size ?? null,
+    MIMEType: item?.File?.MediaType ?? link.MIMEType ?? null
+  };
 }
 async function fetchLinks(session, linkIds) {
   const out = /* @__PURE__ */ new Map();
@@ -38250,7 +38264,8 @@ export {
   downloadProtonShare,
   fetchProtonThumbnails,
   inspectProtonShare,
-  parseShareUrl
+  parseShareUrl,
+  rootLinkMeta
 };
 /*! Bundled license information:
 

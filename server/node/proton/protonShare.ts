@@ -8,7 +8,9 @@
 //
 // Flow, as observed from Proton's own web client:
 //   1. GET  drive/urls/{token}/info                     (no auth at all)
-//   2. POST drive/urls/{token}/auth                     (SRP with the # fragment)
+//   2. POST drive/urls/{token}/auth                     (SRP with the # fragment;
+//      Share.LinkID is the shared item. GET drive/urls/{token}, which used to
+//      give its details, is gone: Proton answers "Path not found".)
 //   3. POST drive/unauth/v2/volumes/{volumeId}/links    (-> active revision id)
 //   4. GET  drive/unauth/v2/volumes/{v}/files/{n}/revisions/{r}  (-> block urls)
 //   5. GET  each block's BareURL with `pm-storage-token`, then decrypt
@@ -175,12 +177,19 @@ async function openShare(token: string, password: string, customPassword = ""): 
     });
 
     const authHeaders = { "x-pm-uid": auth.UID, authorization: `Bearer ${auth.AccessToken}` };
-    const rootMeta = (await api(`drive/urls/${token}`, { headers: authHeaders })).Token;
+    const volumeId = auth.Share.VolumeID as string;
+    // Proton removed GET drive/urls/{token} (it answers "Path not found").
+    // As in @protontech/drive-sdk, the shared item is auth.Share.LinkID and
+    // its details come from the same /links POST used for everything else.
+    const rootLinkId = auth.Share.LinkID as string;
+    const rootItem = (await fetchLinks({ volumeId, authHeaders }, [rootLinkId])).get(rootLinkId);
+    const rootMeta = rootLinkMeta(rootItem);
+    if (!rootMeta) throw new ProtonShareError("Proton did not return the shared item");
     const rootName = await decryptName(rootMeta.Name, shareKey);
 
     return {
         authHeaders,
-        volumeId: auth.Share.VolumeID as string,
+        volumeId,
         shareKey,
         rootMeta,
         rootName,
@@ -254,8 +263,23 @@ async function decryptName(armored: string, parentKey: unknown): Promise<string>
     return out.data;
 }
 
+/**
+ * The shared item's /links entry in the shape the removed drive/urls/{token}
+ * gave: the link's own fields plus LinkType, Size and MIMEType.
+ */
+export function rootLinkMeta(item: any): any | null {
+    const link = item?.Link ?? item;
+    if (!link?.LinkID) return null;
+    return {
+        ...link,
+        LinkType: link.Type,
+        Size: item?.File?.ActiveRevision?.EncryptedSize ?? item?.File?.TotalEncryptedSize ?? link.Size ?? null,
+        MIMEType: item?.File?.MediaType ?? link.MIMEType ?? null,
+    };
+}
+
 /** Link details for a set of ids, keyed by id (the API does not promise order). */
-async function fetchLinks(session: ShareSession, linkIds: string[]): Promise<Map<string, any>> {
+async function fetchLinks(session: Pick<ShareSession, "volumeId" | "authHeaders">, linkIds: string[]): Promise<Map<string, any>> {
     const out = new Map<string, any>();
     for (let i = 0; i < linkIds.length; i += LINKS_PER_REQUEST) {
         const batch = await api(`drive/unauth/v2/volumes/${encodeURIComponent(session.volumeId)}/links`, {

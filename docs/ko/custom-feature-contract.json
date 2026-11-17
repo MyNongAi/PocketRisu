@@ -2521,9 +2521,13 @@
         "src/ts/protonBrowser.svelte.ts",
         "src/ts/protonImport.ts",
         "src/ts/importProgress.ts",
-        "src/ts/shareTargetRouting.ts"
+        "src/ts/shareTargetRouting.ts",
+        "server/node/proton/protonShare.ts",
+        "server/node/vendor/protonShare.mjs"
       ],
       "requiredMarkers": [
+        { "file": "server/node/proton/protonShare.ts", "contains": "const rootLinkId = auth.Share.LinkID as string;" },
+        { "file": "server/node/vendor/protonShare.mjs", "contains": "const rootLinkId = auth.Share.LinkID;" },
         {
           "file": "src/lib/Others/ProtonFolderBrowser.svelte",
           "contains": "data-proton-backdrop"
@@ -2556,7 +2560,8 @@
         "src/lib/Others/ProtonFolderBrowser.test.ts",
         "src/ts/protonImport.test.ts",
         "src/ts/importProgress.test.ts",
-        "src/ts/shareTarget.test.ts"
+        "src/ts/shareTarget.test.ts",
+        "server/node/protonShareRoot.test.ts"
       ]
     },
     {
