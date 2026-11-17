@@ -324,7 +324,12 @@
             // reader, and the browser's scroll anchoring then moved the view
             // by the size of the panel the button opened. The role is, since
             // a role switch (playground) needs the new sender.
-            let hashd = (echoIndex >= 0 ? echoText + '\u0000' : '') + hashMessageData + (message.chatId ?? '') + i.toString() + (message.role ?? '') + messageLargePortrait.toString() + message.disabled?.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
+            // A user message shows the persona's name and icon from when it was
+            // mounted; they are part of its hash, so binding another persona to
+            // the chat (or picking another one) redraws it (the user's report,
+            // 2026-11-18: the old name stayed on the inputs).
+            const senderKey = message.role === 'user' ? `${currentUsername}\u0000${userIcon}\u0000` : '';
+            let hashd = senderKey + (echoIndex >= 0 ? echoText + '\u0000' : '') + hashMessageData + (message.chatId ?? '') + i.toString() + (message.role ?? '') + messageLargePortrait.toString() + message.disabled?.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
             const currentHash = hashCode(hashd);
             currentHashes.add(currentHash);
             if(!hashes.has(currentHash)){

@@ -3292,6 +3292,7 @@
       "criticality": "core-ux",
       "ownerFiles": [
         "src/lib/SideBars/PersonaBind.svelte",
+        "src/lib/ChatScreens/Chats.svelte",
         "src/lib/Setting/listedPersona.svelte",
         "src/ts/personaTextEdit.ts",
         "src/lang/en.ts",
@@ -3308,7 +3309,8 @@
         { "file": "src/ts/personaTextEdit.ts", "contains": "changeUserPersona(created)" },
         { "file": "src/ts/personaTextEdit.ts", "contains": "onBind?.(created)" },
         { "file": "src/ts/personaTextEdit.ts", "contains": "updatePersonaText(target.index, patch)" },
-        { "file": "src/lang/ko.ts", "contains": "personaDescriptionLabel: \"페르소나 설명\"" }
+        { "file": "src/lang/ko.ts", "contains": "personaDescriptionLabel: \"페르소나 설명\"" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const senderKey = message.role === 'user' ? `${currentUsername}\\u0000${userIcon}\\u0000` : '';" }
       ],
       "regressionTests": [
         "src/ts/persona.test.ts",
