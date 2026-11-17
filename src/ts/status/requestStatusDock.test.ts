@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
-import { dismissRequestToast, staysOpenUnseen, dockState, isMinimizedRequest, keepsDoneButton, leavesAtOnce, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, unminimizeRequest } from './requestStatusDock'
+import { dismissRequestToast, foldsWhenDone, staysOpenUnseen, dockState, isMinimizedRequest, keepsDoneButton, leavesAtOnce, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, unminimizeRequest } from './requestStatusDock'
 import { requestStatuses } from './requestStatus'
 
 afterEach(() => {
@@ -53,6 +53,25 @@ describe('requestStatusDock', () => {
         // A finished request's card just closes.
         requestToastDismissed('done')
         expect(isMinimizedRequest('done')).toBe(false)
+    })
+
+    it('folds a reply that went well into its check, also when its card is swiped (2026-11-18)', () => {
+        expect(foldsWhenDone({ phase: 'done', kind: 'main' })).toBe(true)
+        expect(foldsWhenDone({ phase: 'responding', kind: 'main' })).toBe(false)
+        expect(foldsWhenDone({ phase: 'failed', kind: 'main' })).toBe(false)
+        expect(foldsWhenDone({ phase: 'aborted', kind: 'main' })).toBe(false)
+        expect(foldsWhenDone({ phase: 'done', kind: 'memory' })).toBe(false)
+
+        requestStatuses.set(new Map([
+            ['reply', { phase: 'done', kind: 'main' } as any],
+            ['failed', { phase: 'failed', kind: 'main' } as any],
+            ['memory', { phase: 'done', kind: 'memory' } as any],
+        ]))
+        for (const id of ['reply', 'failed', 'memory']) {
+            requestToastShown(id)
+            requestToastDismissed(id)
+        }
+        expect(get(minimizedRequests)).toEqual(['reply'])
     })
 
     it('keeps an open card of a reply finished in another chat until that chat is on screen', () => {

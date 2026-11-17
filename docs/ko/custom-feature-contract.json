@@ -1847,9 +1847,9 @@
     },
     {
       "id": "REQUEST-STATUS-DOCK",
-      "title": "요청 상태 창 접기: 생성 중 원형 버튼, 완료 시 체크로 채팅 이동 · 성공한 보조 요청은 바로 사라짐",
+      "title": "요청 상태 창 접기: 생성 중 원형 버튼, 끝난 답은 바로 체크로 접힘 · 성공한 보조 요청은 바로 사라짐",
       "criticality": "core-ux",
-      "notes": "사용자 요청(2026-11-14): PC 분할에서 접은 요청 버튼은 해당 채팅이 보이는 칸의 오른쪽 위에 놓입니다. 칸별 토스트와 같은 측정 경계(`paneToastBoxes`, `dockPaneFor`)를 써서 경계선 이동·칸 바꾸기·분할 닫기를 따릅니다. 어느 칸에도 없는 요청과 가져오기 진행 버튼은 창 오른쪽에 남고, 좁은 화면 배치는 그대로입니다.",
+      "notes": "사용자 요청(2026-11-14): PC 분할에서 접은 요청 버튼은 해당 채팅이 보이는 칸의 오른쪽 위에 놓입니다. 칸별 토스트와 같은 측정 경계(`paneToastBoxes`, `dockPaneFor`)를 써서 경계선 이동·칸 바꾸기·분할 닫기를 따릅니다. 어느 칸에도 없는 요청과 가져오기 진행 버튼은 창 오른쪽에 남고, 좁은 화면 배치는 그대로입니다. 사용자 요청(2026-11-18): 메인 답이 잘 끝나면 펼쳐진 창이 남지 않고 바로 ✅ 버튼으로 접힙니다(`foldsWhenDone`). 보고 있는 채팅의 ✅는 4초 뒤 사라지고, 다른 채팅의 ✅는 누르거나 그 채팅을 열 때까지 남습니다. 실패·취소는 예전처럼 창으로 남습니다.",
       "ownerFiles": [
         "src/ts/status/requestStatusDock.ts",
         "src/lib/UI/GUI/RequestStatusDock.svelte",
@@ -1871,7 +1871,10 @@
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "if (kind === 'memory') return 'text-draculared'" },
         { "file": "src/ts/status/requestStatusDock.ts", "contains": "return entry.phase === 'done' && entry.kind !== 'main'" },
         { "file": "src/lib/UI/GUI/RequestStatusDock.svelte", "contains": "dockPaneFor(entry.chatId, $paneToastBoxes)" },
-        { "file": "src/lib/UI/GUI/PaneToasters.svelte", "contains": "paneToastBoxes.set(next)" }
+        { "file": "src/lib/UI/GUI/PaneToasters.svelte", "contains": "paneToastBoxes.set(next)" },
+        { "file": "src/ts/status/requestStatusDock.ts", "contains": "export function foldsWhenDone(" },
+        { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (foldsWhenDone(entry) && !get(minimizedRequests).includes(id)) {" },
+        { "file": "src/lib/UI/GUI/RequestStatusDock.svelte", "contains": "if (here === chatOnScreen) return" }
       ],
       "regressionTests": [
         "src/ts/status/requestStatusDock.test.ts",
@@ -2627,7 +2630,7 @@
         "src/lib/UI/GUI/RequestStatusDock.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/status/requestStatusDock.ts", "contains": "if (entry && !isTerminalPhase(entry.phase)) minimizeRequest(id)" },
+        { "file": "src/ts/status/requestStatusDock.ts", "contains": "if (entry && (!isTerminalPhase(entry.phase) || foldsWhenDone(entry))) minimizeRequest(id)" },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "onDismiss: () => requestToastDismissed(id)," },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (!get(minimizedRequests).includes(id) && staysOpenUnseen(entry, currentChatId())) {" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "onclick={goToChat}><ChevronRightIcon size={14} /></button>" },

@@ -15,7 +15,7 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, clearStatus } from 'src/ts/status/requestStatus'
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
-    import { dismissRequestToast, keepsDoneButton, leavesAtOnce, minimizedRequests, requestToastDismissed, requestToastShown, staysOpenUnseen, unminimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { dismissRequestToast, foldsWhenDone, keepsDoneButton, leavesAtOnce, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, staysOpenUnseen, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, selIdState } from 'src/ts/stores.svelte'
     import { paneToasterFor } from 'src/ts/status/requestToastPane'
 
@@ -52,9 +52,10 @@
     }
 
     // A swipe folds a running request's card into the dock, like its "−"
-    // (requestStatusDock.ts, the user's request 2026-10-18); a finished one
-    // just closes. `shown` keeps the id either way, so later store updates
-    // for the same request do not re-issue the card; the dock's button does.
+    // (requestStatusDock.ts, the user's request 2026-10-18), and a reply that
+    // went well into its check; any other finished one just closes. `shown`
+    // keeps the id either way, so later store updates for the same request do
+    // not re-issue the card; the dock's button does.
     const unsub = requestStatuses.subscribe((map) => {
         for (const [id, entry] of map) {
             if (!shown.has(id)) {
@@ -71,6 +72,12 @@
                 })
             }
             if (isTerminalPhase(entry.phase)) {
+                // A reply that went well folds into the dock's check at once
+                // instead of staying open over the chat (foldsWhenDone).
+                if (foldsWhenDone(entry) && !get(minimizedRequests).includes(id)) {
+                    dismissRequestToast(id)
+                    minimizeRequest(id)
+                }
                 // Folded and written in another chat: the dock's check stays
                 // until it is tapped (RequestStatusDock clears the entry).
                 if (get(minimizedRequests).includes(id) && keepsDoneButton(entry, currentChatId())) continue
@@ -126,13 +133,19 @@
         }
     })
 
-    // Folded while kept up: the dock takes it (a done reply keeps its check
-    // there; anything else leaves as usual).
+    // Folded once finished (by "−", a swipe or a reply that went well): the
+    // dock takes it. A done reply of another chat keeps its check there;
+    // anything else leaves after the usual retention (a timer already set
+    // stays as it is). A running one is handled when it ends, above.
     const unsubFolded = minimizedRequests.subscribe((ids) => {
         for (const id of ids) {
-            if (!keptUnseen.delete(id)) continue
+            const wasKept = keptUnseen.delete(id)
             const entry = get(requestStatuses).get(id)
-            if (!entry || !keepsDoneButton(entry, currentChatId())) scheduleDismiss(id)
+            if (!entry) {
+                if (wasKept) scheduleDismiss(id)
+                continue
+            }
+            if (isTerminalPhase(entry.phase) && !keepsDoneButton(entry, currentChatId())) scheduleDismiss(id)
         }
     })
 

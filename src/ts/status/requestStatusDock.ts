@@ -36,11 +36,15 @@ export function requestToastShown(id: string): void {
     quietDismissals.delete(id)
 }
 
-/** sonner's onDismiss for a request card: a swipe on a running request folds it. */
+/**
+ * sonner's onDismiss for a request card: a swipe folds a running request, and
+ * a reply that went well into its check (foldsWhenDone, the user's request,
+ * 2026-11-18). A failed or cancelled card, or an auxiliary one, just closes.
+ */
 export function requestToastDismissed(id: string): void {
     if (quietDismissals.delete(id)) return
     const entry = get(requestStatuses).get(id)
-    if (entry && !isTerminalPhase(entry.phase)) minimizeRequest(id)
+    if (entry && (!isTerminalPhase(entry.phase) || foldsWhenDone(entry))) minimizeRequest(id)
 }
 
 export function isMinimizedRequest(id: string): boolean {
@@ -55,21 +59,33 @@ export function dockState(entry: Pick<RequestStatusEntry, 'phase'>): DockState {
 }
 
 /**
- * Whether a finished folded request stays as a check button: a main reply
- * written in another chat than the one on screen. Anything else (an aux
- * request, a reply in the chat being read, a failure or a cancel) leaves
- * with its toast as before.
+ * Whether a finished card folds into the dock's check at once instead of
+ * staying open: a main reply that went well (the user's request, 2026-11-18:
+ * the open card at the top hid the top of the reply, its pictures too). In
+ * the chat on screen the check leaves after the usual retention; another
+ * chat's stays until it is tapped or that chat is opened (keepsDoneButton).
  */
+export function foldsWhenDone(entry: Pick<RequestStatusEntry, 'phase' | 'kind'>): boolean {
+    return entry.phase === 'done' && entry.kind === 'main'
+}
+
 /**
  * Whether a finished card that is open (not folded) stays up: a main reply
  * done or failed in another chat than the one on screen (the user's request,
  * 2026-10-19: it closed on its own while the reader was elsewhere). It closes
- * as usual once that chat is opened.
+ * as usual once that chat is opened. A done one is folded first
+ * (foldsWhenDone), so this keeps a failure.
  */
 export function staysOpenUnseen(entry: Pick<RequestStatusEntry, 'phase' | 'chatId' | 'kind'>, currentChatId: string | null | undefined): boolean {
     return (entry.phase === 'done' || entry.phase === 'failed') && entry.kind === 'main' && !!entry.chatId && entry.chatId !== currentChatId
 }
 
+/**
+ * Whether a finished folded request stays as a check button: a main reply
+ * written in another chat than the one on screen. Anything else (an aux
+ * request, a reply in the chat being read, a failure or a cancel) leaves
+ * with its toast as before.
+ */
 export function keepsDoneButton(entry: Pick<RequestStatusEntry, 'phase' | 'chatId' | 'kind'>, currentChatId: string | null | undefined): boolean {
     return entry.phase === 'done' && entry.kind === 'main' && !!entry.chatId && entry.chatId !== currentChatId
 }

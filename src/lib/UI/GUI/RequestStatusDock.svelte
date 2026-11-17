@@ -5,6 +5,7 @@
     // opens the chat it was written in. A failure shows briefly and leaves
     // with its toast (RequestStatusToaster clears it).
     import { toast } from 'svelte-sonner'
+    import { untrack } from 'svelte'
     import { get } from 'svelte/store'
     import { requestStatuses, clearStatus } from 'src/ts/status/requestStatus'
     import { dockState, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
@@ -26,12 +27,20 @@
         return character?.chats?.[character.chatPage]?.id ?? null
     })
 
-    // Reaching the chat another way also answers its check.
+    // Reaching the chat another way also answers its check. Only moving to
+    // that chat does: a reply done in the chat on screen keeps its check for
+    // the usual retention (RequestStatusToaster, the user's request,
+    // 2026-11-18).
+    let chatOnScreen: string | null | undefined = undefined
     $effect(() => {
         const here = currentChatId
-        for (const { id, entry } of items) {
-            if (here && entry.chatId === here && dockState(entry) === 'done') close(id)
-        }
+        if (here === chatOnScreen) return
+        chatOnScreen = here
+        untrack(() => {
+            for (const { id, entry } of items) {
+                if (here && entry.chatId === here && dockState(entry) === 'done') close(id)
+            }
+        })
     })
 
     function close(id: string): void {
