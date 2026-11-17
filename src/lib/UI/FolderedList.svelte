@@ -11,6 +11,7 @@
     import type { Snippet } from "svelte";
     import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderInputIcon, FolderOutputIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon, XIcon } from "@lucide/svelte";
     import { menuTriggerClick, menuTriggerProps } from "src/ts/gui/holdDrag";
+    import { isStrayTouch, touchPressMove, touchPressStart } from "src/ts/gui/touchTap";
     import type { SortableEvent } from "sortablejs";
     import { v4 as uuidv4 } from "uuid";
     import { language } from "src/lang";
@@ -452,8 +453,11 @@
     }
 </script>
 
-<!-- @container/folders: a narrow list (a phone's side panel) packs its folder rows tighter, below. -->
-<div class="@container/folders flex flex-col gap-2" bind:this={rootEl}>
+<!-- @container/folders: a narrow list (a phone's side panel) packs its folder rows tighter, below.
+     The capture handlers note each touch, so a folder or a row opens only on a tap (touchTap.ts). -->
+<div class="@container/folders flex flex-col gap-2" bind:this={rootEl}
+    onpointerdowncapture={touchPressStart}
+    onpointermovecapture={touchPressMove}>
     <!-- flex-wrap: with 3+ actions the toolbar overflowed 360px phones -->
     <div class="flex flex-wrap items-center gap-2">
         {@render actions?.()}
@@ -552,7 +556,7 @@
                  a long name takes a second line instead of an ellipsis. -->
             <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none @max-xs/folders:gap-1 @max-xs/folders:px-1"
                 role="button" tabindex="0"
-                onclick={() => toggleCollapsed(folder.id)}
+                onclick={(e) => { if (!isStrayTouch(e)) toggleCollapsed(folder.id) }}
                 onkeydown={(e) => { if (e.key === 'Enter') toggleCollapsed(folder.id) }}>
                 {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                 <FolderIcon size={16} class="shrink-0 text-textcolor2 @max-xs/folders:hidden"/>
@@ -611,7 +615,7 @@
             <!-- Always shown (even with no folders) so users discover that folders exist. -->
             <div class="flex items-center gap-2 px-2 py-2 text-textcolor2 cursor-pointer select-none"
                 role="button" tabindex="0"
-                onclick={() => toggleCollapsed('')}
+                onclick={(e) => { if (!isStrayTouch(e)) toggleCollapsed('') }}
                 onkeydown={(e) => { if (e.key === 'Enter') toggleCollapsed('') }}>
                 {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0"/>{:else}<ChevronDownIcon size={16} class="shrink-0"/>{/if}
                 <FolderIcon size={16} class="shrink-0"/>
@@ -674,7 +678,7 @@
         {...triggerProps}
         class="flex items-center gap-2 rounded-md px-2 min-h-11 py-1 text-textcolor cursor-pointer {index === selectedIndex ? 'bg-selected' : 'risu-interactive-surface'}"
         role="button" tabindex="0"
-        onclick={() => onSelect(index)}
+        onclick={(e) => { if (!isStrayTouch(e)) onSelect(index) }}
         onkeydown={(e) => {
             // Only the header itself — inputs rendered inside itemContent must keep their Space/Enter.
             if (e.target !== e.currentTarget) return

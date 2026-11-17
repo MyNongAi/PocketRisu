@@ -86,7 +86,10 @@ describe('sortableTouchHold', () => {
         press(first, 'pointerup')
     })
 
-    it.each([100, 700])('opens just the button menu on a still release after %i ms', (duration) => {
+    // A tap opens the menu; a finger that stayed (a hold) opens nothing since
+    // 2026-11-18 (touchTap.ts: a stroke or a hold over ⋮ while scrolling
+    // opened it, the user's request).
+    it.each([[100, true], [700, false]])('on a still release after %i ms, the button menu opens: %s', (duration, opens) => {
         vi.useFakeTimers()
         initSortableTouchHold()
         const el = list()
@@ -111,7 +114,7 @@ describe('sortableTouchHold', () => {
         expect(open).not.toHaveBeenCalled()
         expect(first.classList.contains('sortable-chosen')).toBe(duration >= 300)
         press(icon, 'pointerup')
-        expect(open).toHaveBeenCalledOnce()
+        expect(open).toHaveBeenCalledTimes(opens ? 1 : 0)
         expect(Sortable.dragged).toBeNull()
     })
 

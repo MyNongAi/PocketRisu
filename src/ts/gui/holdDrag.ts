@@ -11,7 +11,10 @@
 //
 // The menu (bits-ui) opens on a touch's pointerup, which comes after the
 // drop as well; while a drag runs, and a moment after, that pointerup is
-// swallowed (menuTriggerProps).
+// swallowed (menuTriggerProps). So is the release of a touch that was not a
+// tap: a stroke over the ⋮ while scrolling, or a hold (touchTap.ts).
+
+import { isStrayTouch, touchPressMove, touchPressStart } from './touchTap'
 
 export const HOLD_DRAG_ATTRIBUTE = 'data-hold-drag'
 
@@ -66,6 +69,7 @@ function toggleLikeMousePress(props: Record<string, unknown>): void {
 export function menuTriggerProps<T extends Record<string, unknown>>(props: T): T {
     const pointerDown = props.onpointerdown as Handler<PointerEvent>
     const pointerUp = props.onpointerup as Handler<PointerEvent>
+    const pointerMove = props.onpointermove as Handler<PointerEvent>
     const contextMenu = props.oncontextmenu as Handler<MouseEvent>
     return {
         ...props,
@@ -74,6 +78,7 @@ export function menuTriggerProps<T extends Record<string, unknown>>(props: T): T
         style: `${props.style ?? ''}; touch-action: none;`,
         onpointerdown: (event: PointerEvent) => {
             lastPointerType = event.pointerType
+            touchPressStart(event)
             // bits-ui prevents the touch pointerdown's default and opens on a mouse
             // press. Leave the press to Sortable; a touch tap opens on bits-ui's
             // pointerup, a mouse on the click (menuTriggerClick).
@@ -94,8 +99,14 @@ export function menuTriggerProps<T extends Record<string, unknown>>(props: T): T
             }
             contextMenu?.(event)
         },
+        onpointermove: (event: PointerEvent) => {
+            touchPressMove(event)
+            pointerMove?.(event)
+        },
         onpointerup: (event: PointerEvent) => {
-            if (dragging) {
+            // A finger that stroked over the ⋮ or stayed on it opens no menu
+            // (touchTap.ts, the user's request 2026-11-18).
+            if (dragging || isStrayTouch(event)) {
                 event.preventDefault()
                 return
             }
