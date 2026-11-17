@@ -37,6 +37,7 @@
     import { changeChatTo, createChatCopyName, requestImmediateSave } from "src/ts/globalApi.svelte";
     import { chatIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     import { chatCopyNameFromLastInput, reissueMessageIds } from "src/ts/chatClone";
+    import { folderForChatCopy } from "src/ts/chatBranchFolder";
     import { copyChatDraft, seedChatDraft } from "src/ts/storage/chatDraft";
     import MemoryBind from "./MemoryBind.svelte";
     import { RISU_CHAT_ROOM_DRAG_TYPE } from "src/ts/dragTypes";
@@ -378,6 +379,7 @@
                                 newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
+                                newChat.folderId = folderForChatCopy(chara, chara.chats[chatIdx], DBState.db.createFolderOnBranch, v4)
                                 // The unsent text in the input goes along (the user's request, 2026-10-10);
                                 // before a send pushes its input, that input goes too.
                                 if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
@@ -487,6 +489,7 @@
                         newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
+                        newChat.folderId = folderForChatCopy(chara, chara.chats[i], DBState.db.createFolderOnBranch, v4)
                         // The unsent text in the input goes along (the user's request, 2026-10-10);
                         // before a send pushes its input, that input goes too.
                         if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)

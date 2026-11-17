@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-14",
+  "updatedAt": "2026-11-18",
   "features": [
     {
       "id": "ASSET-NAME-NORMALIZED",
@@ -1758,10 +1758,12 @@
       "id": "GENERATION-NO-CAP",
       "title": "동시 생성 개수 제한 없음 · 응답 중 복사는 쓰는 중인 답만 빼고 바로",
       "criticality": "core-ux",
+      "notes": "사용자 요청(2026-11-18): 채팅을 복사하면 '분기 시 폴더 생성' 설정이 켜져 있을 때 메시지 분기와 같은 방식으로 원본과 복사본을 'Branches of …' 폴더로 묶습니다. 원본이 이미 폴더에 있으면 복사본도 그 폴더에 남습니다.",
       "ownerFiles": [
         "src/ts/process/generationConcurrency.ts",
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
         "src/lib/SideBars/SideChatList.svelte",
+        "src/ts/chatBranchFolder.ts",
         "src/ts/chatCopySnapshot.ts",
         "src/ts/storage/chatDraft.ts",
         "src/lib/ChatScreens/Chat.svelte"
@@ -1779,13 +1781,18 @@
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const input = chatForCopyWhileAnswering(snapshot, {" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "if (restored) restoreShownSwipeScriptstate(copy, restored)" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(i + 1, 0, newChat)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "newChat.folderId = folderForChatCopy(chara, chara.chats[chatIdx], DBState.db.createFolderOnBranch, v4)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "newChat.folderId = folderForChatCopy(chara, chara.chats[i], DBState.db.createFolderOnBranch, v4)" },
+        { "file": "src/ts/chatBranchFolder.ts", "contains": "export function folderForChatCopy(" },
+        { "file": "src/ts/chatBranchFolder.test.ts", "contains": "describe('folderForChatCopy', () => {" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const snapshot = clearReplyInProgress($state.snapshot(chat) as Chat)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const newChat = clearReplyInProgress($state.snapshot(currentChat))" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "export function clearReplyInProgress<" }
       ],
       "regressionTests": [
         "src/ts/process/generationConcurrency.test.ts",
-        "src/ts/chatCopySnapshot.test.ts"
+        "src/ts/chatCopySnapshot.test.ts",
+        "src/ts/chatBranchFolder.test.ts"
       ]
     },
     {
