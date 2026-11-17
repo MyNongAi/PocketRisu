@@ -1,9 +1,10 @@
 import { language } from 'src/lang'
-import { notifySuccess } from './alert'
+import { alertError, notifySuccess } from './alert'
 import { importCharacterProcess } from './characterCards'
 import { classifyDroppedImport, type DropImportDestination } from './dropImportRouting'
 import { checkCharOrder } from './globalApi.svelte'
 import { runImportBatch } from './importProgress'
+import { importPluginFile } from './plugins/pluginFileImport'
 import { importModuleFile } from './process/moduleImport'
 import { importPreset } from './storage/database.svelte'
 
@@ -11,10 +12,22 @@ export async function importDroppedFiles(
     files: readonly File[],
     destination: DropImportDestination = 'default',
 ) {
+    // PLUGIN-FILE-DROP: dialogs stay visible while scripts install in order.
+    const plugins = files.filter((file) => classifyDroppedImport(file.name, destination) === 'plugin')
+    const otherFiles = files.filter((file) => classifyDroppedImport(file.name, destination) !== 'plugin')
+    let installedPlugins = 0
+    for (const file of plugins) {
+        try {
+            if(await importPluginFile(file)) installedPlugins++
+        } catch {
+            alertError(language.errors.noData)
+        }
+    }
+
     let importedCharacter = false
     const characters = await import('./characters')
     const before = characters.characterIdsNow()
-    const result = await runImportBatch(files, async (file, report) => {
+    const batch = await runImportBatch(otherFiles, async (file, report) => {
         const kind = classifyDroppedImport(file.name, destination)
 
         if(kind === 'preset'){
@@ -46,6 +59,12 @@ export async function importDroppedFiles(
         })
         importedCharacter = true
     })
+
+    const result = {
+        completed: installedPlugins + batch.completed,
+        failed: plugins.length - installedPlugins + batch.failed,
+        total: files.length,
+    }
 
     if(importedCharacter){
         checkCharOrder()

@@ -25,6 +25,7 @@
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import * as pluginStorageStore from "src/ts/plugins/pluginStorageStore";
     import { FileDropSurface, draggedItemsAreImages } from "src/ts/gui/fileDropSurface.svelte";
+    import { importPluginFile } from "src/ts/plugins/pluginFileImport";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
 
     // Plugins are keyed by name (no id); track expanded parameter panels by name.
@@ -108,8 +109,7 @@
             return
         }
         for (const file of scripts) {
-            const code = (await file.text()).replace(/^\uFEFF/gm, '')
-            await importPlugin(code, { isTypescript: /\.ts$/i.test(file.name) })
+            await importPluginFile(file)
         }
     }
 

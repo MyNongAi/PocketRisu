@@ -131,9 +131,9 @@
 
         const files = Array.from(e.dataTransfer.files)
         // A dedicated image/persona drop target may stop bubbling. Capture a
-        // pure RISUM batch first so the legacy module format truly works from
+        // pure module/script batches first so these formats truly work from
         // anywhere without stealing mixed/image drops from those editors.
-        if(!files.every((file) => file.name.toLocaleLowerCase().endsWith('.risum'))) return
+        if(!files.every((file) => /\.(risum|js|ts)$/i.test(file.name))) return
         e.preventDefault()
         e.stopPropagation()
         await importDroppedFiles(files)

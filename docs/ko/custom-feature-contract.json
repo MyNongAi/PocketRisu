@@ -1560,16 +1560,23 @@
     },
     {
       "id": "PLUGIN-FILE-DROP",
-      "title": "플러그인 탭에 .js/.ts 파일 끌어 놓아 가져오기",
+      "title": "앱 어디에나 .js/.ts 파일 끌어 놓아 플러그인 설치",
       "criticality": "core-ux",
       "ownerFiles": [
-        "src/lib/Setting/Pages/PluginSettings.svelte"
+        "src/lib/Setting/Pages/PluginSettings.svelte",
+        "src/App.svelte",
+        "src/ts/dropImportRouting.ts",
+        "src/ts/dropImport.ts",
+        "src/ts/plugins/pluginFileImport.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/lib/Setting/Pages/PluginSettings.svelte", "contains": "ondrop={pluginFileDrop.drop}" }
+        { "file": "src/lib/Setting/Pages/PluginSettings.svelte", "contains": "ondrop={pluginFileDrop.drop}" },
+        { "file": "src/ts/dropImport.ts", "contains": "PLUGIN-FILE-DROP: dialogs stay visible while scripts install in order." }
       ],
       "regressionTests": [
-        "src/ts/gui/fileDropSurface.svelte.test.ts"
+        "src/ts/gui/fileDropSurface.svelte.test.ts",
+        "src/ts/dropImportRouting.test.ts",
+        "src/ts/plugins/pluginFileImport.test.ts"
       ]
     },
     {

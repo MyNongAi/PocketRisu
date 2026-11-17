@@ -7,6 +7,13 @@ describe('classifyDroppedImport', () => {
         expect(classifyDroppedImport('legacy.risum', 'module')).toBe('module')
     })
 
+    it('treats JS and TS as plugins on either destination', () => {
+        for (const name of ['plugin.js', 'plugin.JS', 'plugin.ts']) {
+            expect(classifyDroppedImport(name)).toBe('plugin')
+            expect(classifyDroppedImport(name, 'module')).toBe('plugin')
+        }
+    })
+
     it('treats CHARX as a character on the general app surface', () => {
         expect(classifyDroppedImport('card.charx')).toBe('character')
     })
