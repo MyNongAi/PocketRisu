@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-18",
+  "updatedAt": "2026-11-19",
   "features": [
     {
       "id": "ASSET-NAME-NORMALIZED",
@@ -1556,6 +1556,22 @@
       ],
       "regressionTests": [
         "server/node/laptop-switch.test.ts"
+      ]
+    },
+    {
+      "id": "VERTEX-LOCATION-PICKER",
+      "title": "Vertex Location 리전 선택과 직접 입력",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/preset/vertexLocations.ts",
+        "src/lib/UI/GUI/VertexLocationPicker.svelte",
+        "src/lib/UI/GUI/SchemaFieldRenderer.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/UI/GUI/SchemaFieldRenderer.svelte", "contains": "VERTEX-LOCATION-PICKER: the Vertex Location field picks a region from a list." }
+      ],
+      "regressionTests": [
+        "src/ts/preset/vertexLocations.test.ts"
       ]
     },
     {

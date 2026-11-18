@@ -13,6 +13,8 @@
     import ShSelect from "./ShSelect.svelte";
     import OptionInput from "./OptionInput.svelte";
     import CheckInput from "./CheckInput.svelte";
+    import VertexLocationPicker from "./VertexLocationPicker.svelte";
+    import { isVertexLocationField } from "src/ts/preset/vertexLocations";
 
     interface Props {
         schemaField: RegistryFieldSchema;
@@ -156,7 +158,10 @@
         <span class="text-xs text-textcolor2">{localizedDescription}</span>
     {/if}
 
-    {#if uiField.widget === 'text'}
+    <!-- VERTEX-LOCATION-PICKER: the Vertex Location field picks a region from a list. -->
+    {#if isVertexLocationField(schemaField, uiField)}
+        <VertexLocationPicker bind:value={userValues[fieldKey] as string} placeholder={uiField.placeholder ?? ''} />
+    {:else if uiField.widget === 'text'}
         <TextInput
             bind:value={userValues[fieldKey] as string}
             placeholder={uiField.placeholder ?? ''}
