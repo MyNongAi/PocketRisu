@@ -48,6 +48,16 @@ async function open(value: string, onChange = vi.fn()) {
 const tabLabels = () => [...document.querySelectorAll('.rounded-md.border button')].map((button) => button.textContent?.trim())
 
 describe('model picker', () => {
+    it('renders only plugin models without inner tabs in an embedded plugin section', async () => {
+        const target = document.createElement('div')
+        document.body.appendChild(target)
+        mounted.push(mount(ModelList, { target, props: { embedded: true, section: 'plugin' } }))
+        await tick()
+        expect(target.textContent).toContain('[PM] gemini-3.7-flash (Vertex AI 5)')
+        expect(target.textContent).not.toContain('Gemini 2.5 Pro')
+        expect(target.querySelector('.rounded-md.border')).toBeNull()
+    })
+
     it('shows built-in, plugin and model preset tabs side by side', async () => {
         await open('gemini-2.5-pro')
         expect(tabLabels()).toEqual(['Built-in', 'Plugin', 'Model presets'])

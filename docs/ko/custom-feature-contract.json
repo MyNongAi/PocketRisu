@@ -1559,6 +1559,23 @@
       ]
     },
     {
+      "id": "BINDING-PICKER-TABS",
+      "title": "모델 바인딩 칸의 프리셋·기본·플러그인 3탭",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/model/bindingPickerTab.ts",
+        "src/lib/UI/ModelPresetList.svelte",
+        "src/lib/UI/ModelList.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/UI/ModelPresetList.svelte", "contains": "BINDING-PICKER-TABS: preset, built-in and plugin models each get a top-level tab." }
+      ],
+      "regressionTests": [
+        "src/ts/model/bindingPickerTab.test.ts",
+        "src/lib/UI/ModelList.test.ts"
+      ]
+    },
+    {
       "id": "VERTEX-LOCATION-PICKER",
       "title": "Vertex Location 리전 선택과 직접 입력",
       "criticality": "core-ux",

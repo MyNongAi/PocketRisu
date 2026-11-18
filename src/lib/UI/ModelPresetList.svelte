@@ -6,7 +6,8 @@
     import { ArrowLeft, CheckIcon, ChevronRight, HistoryIcon, PinIcon, PinOffIcon, Settings, TriangleAlert } from "@lucide/svelte";
     import ShButton from "./GUI/ShButton.svelte";
     import ModelList from "./ModelList.svelte";
-    import { getModelInfo } from "src/ts/model/modellist";
+    import { getModelInfo, getModelList } from "src/ts/model/modellist";
+    import { bindingPickerTab, type BindingPickerTab } from "src/ts/model/bindingPickerTab";
     import { LEGACY_SLOT, legacySlotValue, parseLegacySlot } from "src/ts/preset/types";
 
     interface Props {
@@ -32,9 +33,8 @@
     }: Props = $props();
 
     let openOptions = $state(false);
-    // Legacy model lists run long (plugin providers add many), so legacy
-    // models get their own tab instead of sharing the preset list.
-    let activeTab = $state<'preset' | 'legacy'>('preset');
+    let activeTab = $state<BindingPickerTab>('preset');
+    let hasPlugins = $state(false);
     let expandedFolders = $state<Set<string>>(new Set());
 
     let presets = $derived(DBState.db.modelPresets ?? []);
@@ -66,7 +66,11 @@
     }
 
     function openPicker() {
-        activeTab = legacy ? 'legacy' : 'preset';
+        const pluginModelIds = allowLegacy
+            ? (getModelList({ groupedByProvider: true }).find(group => group.providerName === 'Plugins')?.models ?? []).map(model => model.id)
+            : [];
+        hasPlugins = pluginModelIds.length > 0;
+        activeTab = allowLegacy ? bindingPickerTab(value, pluginModelIds) : 'preset';
         expandedFolders = new Set(bound?.folderId ? [bound.folderId] : []);
         openOptions = true;
     }
@@ -114,18 +118,24 @@
             <div class="shrink-0 border-t-1 border-y-selected mb-2"></div>
 
             {#if allowLegacy}
+                <!-- BINDING-PICKER-TABS: preset, built-in and plugin models each get a top-level tab. -->
                 <div class="shrink-0 flex w-full rounded-md border border-selected mb-2">
-                    <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelSlotPresetSection}</button>
-                    <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'legacy'} onclick={() => { activeTab = 'legacy' }}>{language.modelSlotLegacySection}</button>
+                    <button class="min-w-0 p-1.5 flex-1 text-sm truncate" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelSlotPresetSection}</button>
+                    <button class="min-w-0 p-1.5 flex-1 text-sm truncate" class:bg-selected={activeTab === 'base'} onclick={() => { activeTab = 'base' }}>{language.modelTabBuiltin}</button>
+                    {#if hasPlugins}
+                        <button class="min-w-0 p-1.5 flex-1 text-sm truncate" class:bg-selected={activeTab === 'plugin'} onclick={() => { activeTab = 'plugin' }}>{language.modelTabPlugin}</button>
+                    {/if}
                 </div>
             {/if}
 
-            {#if allowLegacy && activeTab === 'legacy'}
+            {#if allowLegacy && activeTab === 'base'}
                 <button class="shrink-0 w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-selected rounded mb-1" class:bg-selected={value === LEGACY_SLOT} onclick={() => pick(LEGACY_SLOT)}>
                     <span class="truncate flex-1">{language.modelSlotLegacyGlobal}</span>
                     {#if value === LEGACY_SLOT}<CheckIcon size={14} class="shrink-0 text-primary" />{/if}
                 </button>
-                <ModelList embedded value={legacy?.model ?? ''} onChange={(model) => pick(legacySlotValue(model))} />
+                <ModelList embedded section="base" value={legacy?.model ?? ''} onChange={(model) => pick(legacySlotValue(model))} />
+            {:else if allowLegacy && activeTab === 'plugin'}
+                <ModelList embedded section="plugin" value={legacy?.model ?? ''} onChange={(model) => pick(legacySlotValue(model))} />
             {:else}
             <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
                 {#if presets.length === 0}

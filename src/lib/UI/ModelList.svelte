@@ -24,9 +24,10 @@
         // Render only the model list, in place (no trigger, no dialog) — for a
         // caller that shows it inside its own picker.
         embedded?: boolean
+        section?: 'base' | 'plugin'
     }
 
-    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel, embedded = false }: Props = $props();
+    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel, embedded = false, section }: Props = $props();
     let openOptions = $state(false)
     let showUnrec = $state(false)
     // Model presets sit next to built-in and plugin models: picking one here
@@ -54,10 +55,10 @@
     let pluginModels = $derived(providers.find(g => g.providerName === 'Plugins')?.models ?? [])
     let hasPlugins = $derived(pluginModels.length > 0)
     let presets = $derived(DBState?.db?.modelPresets ?? [])
-    // Embedded in the binding slot picker (its legacy tab): the picker has its
-    // own preset tab, so this one stays out.
+    // Embedded in the binding slot picker: the picker has its own preset tab.
     let hasPresets = $derived(!embedded && presets.length > 0)
-    let showTabs = $derived(hasPlugins || hasPresets)
+    let showTabs = $derived(section === undefined && (hasPlugins || hasPresets))
+    let visibleTab = $derived(section ?? activeTab)
 </script>
 
 {#snippet modelRow(id:string, name:string, unrec:boolean)}
@@ -120,11 +121,11 @@
     {/if}
 
     <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
-        {#if hasPlugins && activeTab === 'plugin'}
+        {#if (section === 'plugin' || hasPlugins) && visibleTab === 'plugin'}
             {#each pluginModels as model}
                 {@render modelRow(model.id, model.name, false)}
             {/each}
-        {:else if hasPresets && activeTab === 'preset'}
+        {:else if hasPresets && visibleTab === 'preset'}
             {#each presets as preset (preset.id)}
                 {@render modelRow(modelPresetPickerId(preset.id), preset.name, false)}
             {/each}
@@ -167,7 +168,7 @@
         {/if}
     </div>
 
-    {#if activeTab === 'base' || !showTabs}
+    {#if section === 'base' || (section === undefined && (activeTab === 'base' || !showTabs))}
         <div class="shrink-0 border-t border-selected mt-2 pt-2 flex items-center justify-between gap-2 px-1">
             <span class="text-sm text-textcolor2">{language.showUnrecommended}</span>
             <ShSwitch className="shrink-0" bind:checked={showUnrec} />
