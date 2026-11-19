@@ -4,6 +4,7 @@ import { isNodeServer } from '../../platform'
 export interface GeminiRelayDefaults {
     jpUrl?: string
     usUrl?: string
+    rotateUrls?: string[]
     key?: string
 }
 

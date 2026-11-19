@@ -1,5 +1,9 @@
 {
   "jpUrl": "https://japan-relay.example.invalid",
   "usUrl": "https://us-relay.example.invalid",
+  "rotateUrls": [
+    "https://first-relay.example.invalid",
+    "https://second-relay.example.invalid"
+  ],
   "key": "replace-with-a-random-secret"
 }

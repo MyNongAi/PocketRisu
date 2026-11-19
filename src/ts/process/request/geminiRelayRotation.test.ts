@@ -22,6 +22,23 @@ describe('Gemini rotation routes', () => {
         expect(urls(geminiRotationRoutes(target, { ...db, geminiRelayUsUrl: '', geminiRelayJpUrl: '' }, defaults)))
             .toEqual(['normal', defaults.usUrl, defaults.jpUrl])
     })
+    it('uses trimmed, filtered, deduplicated file URLs before US and Japan fields', () => {
+        const fileDefaults = { ...defaults, rotateUrls: [
+            ' https://first.example.invalid/a ', 'invalid', 'http://remote.example.invalid',
+            'https://first.example.invalid/a', 'https://second.example.invalid',
+        ] }
+        const list = geminiRotationRoutes(target, db, fileDefaults)
+        expect(urls(list)).toEqual(['normal', 'https://first.example.invalid/a', 'https://second.example.invalid'])
+        expect(list[1]).toMatchObject({ headers: { 'x-relay-key': 'test-key' } })
+        expect(urls(geminiRotationRoutes(target, { ...db, geminiRelayRotateUrls: 'bad' },
+            { ...defaults, rotateUrls: ['invalid'] }))).toEqual(['normal', db.geminiRelayUsUrl, db.geminiRelayJpUrl])
+    })
+    it('uses a non-empty setting before the file rotation list', () => {
+        const list = geminiRotationRoutes(target,
+            { ...db, geminiRelayRotateUrls: ' https://setting.example.invalid ' },
+            { ...defaults, rotateUrls: ['https://file.example.invalid'] })
+        expect(urls(list)).toEqual(['normal', 'https://setting.example.invalid'])
+    })
     it('uses only normal without a key, in another mode, or for another target', () => {
         expect(urls(geminiRotationRoutes(target, { ...db, geminiRelayKey: '' }, {}))).toEqual(['normal'])
         expect(urls(geminiRotationRoutes(target, { ...db, geminiRelayMode: 'off' }, defaults))).toEqual(['normal'])

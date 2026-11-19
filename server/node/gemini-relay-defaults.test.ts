@@ -50,8 +50,9 @@ describe('Gemini relay local defaults route', () => {
         expect(warn).not.toHaveBeenCalled()
     })
     it('reads valid values on every request', async () => {
-        writeFileSync(filePath, JSON.stringify({ jpUrl: 'https://jp.example.invalid', key: 'fake-secret-123456' }))
-        expect(await (await request()).json()).toEqual({ jpUrl: 'https://jp.example.invalid', key: 'fake-secret-123456' })
+        const rotateUrls = ['https://first.example.invalid', 'https://second.example.invalid']
+        writeFileSync(filePath, JSON.stringify({ jpUrl: 'https://jp.example.invalid', rotateUrls, key: 'fake-secret-123456' }))
+        expect(await (await request()).json()).toEqual({ jpUrl: 'https://jp.example.invalid', rotateUrls, key: 'fake-secret-123456' })
         writeFileSync(filePath, JSON.stringify({ usUrl: 'https://us.example.invalid' }))
         expect(await (await request()).json()).toEqual({ usUrl: 'https://us.example.invalid' })
     })
@@ -59,6 +60,8 @@ describe('Gemini relay local defaults route', () => {
         '{',
         JSON.stringify({ jpUrl: 'http://jp.example.invalid', key: 'fake-secret-123456' }),
         JSON.stringify({ jpUrl: 'https://jp.example.invalid', key: 'short' }),
+        JSON.stringify({ jpUrl: 'https://jp.example.invalid', rotateUrls: ['http://first.example.invalid'] }),
+        JSON.stringify({ jpUrl: 'https://jp.example.invalid', rotateUrls: ['https://first.example.invalid', 42] }),
     ])('rejects invalid files without exposing values in the warning', async (source) => {
         writeFileSync(filePath, source)
         expect(await (await request()).json()).toEqual({})

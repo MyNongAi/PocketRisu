@@ -20,7 +20,9 @@ export function geminiRotationRoutes(url: string, db: RotationDb,
     const key = db.geminiRelayKey || defaults.key
     if (db.geminiRelayMode !== 'rotate' || !isGeminiRelayTarget(url) || !key) return routes
     const configured = (db.geminiRelayRotateUrls ?? '').split(/\r?\n/).map(line => line.trim()).filter(validRelayUrl)
-    const candidates = configured.length ? configured : [db.geminiRelayUsUrl || defaults.usUrl, db.geminiRelayJpUrl || defaults.jpUrl]
+    const fromFile = (defaults.rotateUrls ?? []).map(entry => entry.trim()).filter(validRelayUrl)
+    const candidates = configured.length ? configured : fromFile.length ? fromFile
+        : [db.geminiRelayUsUrl || defaults.usUrl, db.geminiRelayJpUrl || defaults.jpUrl]
     for (const relayUrl of new Set(candidates.filter(validRelayUrl))) {
         routes.push({ kind: 'relay', url: relayUrl, headers: { 'x-relay-target': url, 'x-relay-key': key } })
     }

@@ -26,6 +26,15 @@ function createGeminiRelayDefaults({ filePath = DEFAULT_FILE, logger = console }
                 if (url.protocol !== 'https:') throw new Error('invalid URL');
                 result[name] = value[name];
             }
+            if (value.rotateUrls !== undefined) {
+                if (!Array.isArray(value.rotateUrls)) throw new Error('invalid rotation URLs');
+                for (const entry of value.rotateUrls) {
+                    if (typeof entry !== 'string' || new URL(entry).protocol !== 'https:') {
+                        throw new Error('invalid rotation URL');
+                    }
+                }
+                result.rotateUrls = value.rotateUrls;
+            }
             if (value.key !== undefined) {
                 if (typeof value.key !== 'string' || value.key.length < 16) throw new Error('invalid key');
                 result.key = value.key;
