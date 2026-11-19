@@ -448,18 +448,29 @@ describe('a large database', () => {
     expect((await sendWrite(client, big, { 'x-if-match': seeded.headers['x-db-etag'] as string })).status).toBe(200)
   }, 60_000)
 
-  // Starts a request and pauses its response, applies three patches while
-  // the server waits for the reader, then reads the rest.
+  // Starts a request, waits for its response to begin and pauses it, applies
+  // three patches while the server waits for the reader, then reads the rest.
+  // The headers come with the first bytes of the body, after the server took
+  // the root and the change-feed cursor they describe, so every patch lands
+  // after that moment however slow the machine is. A fixed 300 ms wait here
+  // failed on a loaded machine: a read on a new connection (the agent drops a
+  // socket idle for 5 s) can reach the server after the first patch, and the
+  // server, asked for it after that patch, rightly serves it.
   async function streamWhilePatching(request: (onResponse: (res: http.IncomingMessage) => void) => Promise<RawResponse>, logTag: string, round: number) {
     // The server logs its line once the last byte is written.
     const logLines = () => srv.stdout().split('\n').filter((line) => line.includes(logTag)).length
     const linesBefore = logLines()
+    const before: string[] = big.characters.slice(0, 3).map((c: any) => c.name)
     let resume = () => {}
+    let started = () => {}
+    const headers = new Promise<void>((resolve) => { started = resolve })
     const pending = request((res) => {
       res.pause()
       resume = () => res.resume()
+      started()
     })
-    await sleep(300)
+    // A request that fails before its headers fails the test here.
+    await Promise.race([headers, pending])
     const names: string[] = []
     for (let n = 0; n < 3; n++) {
       const name = `round ${round} patch ${n}`
@@ -471,25 +482,28 @@ describe('a large database', () => {
     // The stream is still waiting for the paused reader.
     expect(logLines()).toBe(linesBefore)
     resume()
-    return { response: await pending, names }
+    return { response: await pending, names, before }
   }
 
   test('a read streams the root of the moment it was asked for, whatever patches land meanwhile', async () => {
-    const { response, names } = await streamWhilePatching((onResponse) => rawRequest(srv.port, { path: '/api/read', headers: readHeaders(client), onResponse }), '[Read]', 1)
+    const { response, names, before } = await streamWhilePatching((onResponse) => rawRequest(srv.port, { path: '/api/read', headers: readHeaders(client), onResponse }), '[Read]', 1)
     expect(response.body.length).toBeGreaterThan(15 * 1024 * 1024)
     const view = await decodeView(response.body)
-    expect(view.characters[0].name).not.toBe(names[0])
+    expect(view.characters.slice(0, 3).map((c: any) => c.name)).toEqual(before)
     expect(utils.calculateHash(view).toString(16)).toBe(response.headers['x-db-hash'])
-    const now = await decodeView((await readRaw(srv, client)).body)
+    const after = await readRaw(srv, client)
+    const now = await decodeView(after.body)
     expect(now.characters.slice(0, 3).map((c: any) => c.name)).toEqual(names)
+    // The feed from the read's cursor holds exactly the three patches.
+    expect(Number(after.headers['x-sync-seq'])).toBe(Number(response.headers['x-sync-seq']) + 3)
   }, 60_000)
 
   test('a boot stream does too, and its parts still verify', async () => {
-    const { response, names } = await streamWhilePatching((onResponse) => postBoot(srv, client, { onResponse }), '[Boot] database', 2)
+    const { response, before } = await streamWhilePatching((onResponse) => postBoot(srv, client, { onResponse }), '[Boot] database', 2)
     const parsed = parseBootBody(response.body)
     expect(merkleEtag(parsed.prefix, parsed.manifest)).toBe(response.headers['x-db-etag'])
     const view = await decodeView(assemble(parsed))
-    expect(view.characters[0].name).not.toBe(names[0])
+    expect(view.characters.slice(0, 3).map((c: any) => c.name)).toEqual(before)
     expect(utils.calculateHash(view).toString(16)).toBe(response.headers['x-db-hash'])
   }, 60_000)
 })
