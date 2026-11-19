@@ -59,6 +59,7 @@
     const routeLabel: Record<string, string> = {
         direct: language.requestLogsRouteDirect,
         proxy: language.requestLogsRouteProxy,
+        relay: language.requestLogsRouteRelay,
         job: language.requestLogsRouteJob,
     }
 

@@ -1,6 +1,13 @@
 import { helpKo } from "./help.ko";
 
 export const languageKorean = {
+  geminiRelayMode: "Gemini 중계 지역",
+  geminiRelayOff: "끄기",
+  geminiRelayUs: "미국 중계",
+  geminiRelayJp: "일본 중계",
+  geminiRelayUsUrl: "미국 중계 주소",
+  geminiRelayJpUrl: "일본 중계 주소",
+  geminiRelayKey: "중계 키",
   formating: {
     main: "메인 프롬프트",
     jailbreak: "탈옥 프롬프트",
@@ -2838,6 +2845,7 @@ export const languageKorean = {
   requestLogsResultFailed: "실패",
   requestLogsRouteDirect: "직접",
   requestLogsRouteProxy: "프록시",
+  requestLogsRouteRelay: "중계",
   requestLogsRouteJob: "백엔드 콜",
   requestLogsSearchPlaceholder: "URL, 모델, 오류 메시지로 검색",
   requestLogsRefresh: "새로고침",

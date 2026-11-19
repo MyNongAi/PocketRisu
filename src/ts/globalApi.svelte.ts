@@ -76,6 +76,7 @@ import { moduleUpdate, refreshModules } from "./process/modules";
 import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
 import { chatNeedsUpload, classifyChatSaveIntent, retainConfirmedChats } from './storage/chatSaveIntent'
 import { isLocalNetworkUrl } from "./network/localNetwork";
+import { resolveGeminiRelay } from "./process/request/geminiRelay";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getInlineImageMimeType } from "./media/imageMime";
 export { getInlineImageMimeType } from "./media/imageMime";
@@ -3632,12 +3633,34 @@ async function fetchNativeRaw(url: string, arg: FetchNativeArgs, hooks?: {
     const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
     const requestSignal = timeoutSignal.signal
     const db = getDatabase()
+    // GEMINI-RELAY: Gemini requests go through the chosen relay.
+    const relay = resolveGeminiRelay(url, db)
     let throughProxy = !db.usePlainFetch
     if (useLocalNetworkRoute) {
         throughProxy = true
     }
 
     try {
+        if (relay) {
+            const relayHeaders = { ...headers, ...relay.headers }
+            try {
+                const res = await fetch(relay.url, {
+                    body: realBody as any,
+                    headers: relayHeaders,
+                    method: arg.method,
+                    signal: requestSignal,
+                })
+                hooks?.onRoute?.('relay')
+                return res
+            } catch (e) {
+                if (requestSignal?.aborted) throw e
+                hooks?.onRoute?.('relay')
+                return await fetchViaProxy2(relay.url, relayHeaders, realBody, {
+                    ...arg,
+                    signal: requestSignal,
+                })
+            }
+        }
         if (window.userScriptFetch && !throughProxy) {
             hooks?.onRoute?.('direct')
             return await window.userScriptFetch(url, {

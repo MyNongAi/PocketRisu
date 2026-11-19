@@ -5,6 +5,25 @@
   "updatedAt": "2026-11-19",
   "features": [
     {
+      "id": "GEMINI-RELAY",
+      "title": "Gemini 요청 미국·일본 중계",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "tools/gemini-relay/server.mjs",
+        "src/ts/process/request/geminiRelay.ts",
+        "src/ts/globalApi.svelte.ts",
+        "src/ts/setting/advancedSettingsData.ts",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY: Gemini requests go through the chosen relay." }
+      ],
+      "regressionTests": [
+        "tools/gemini-relay/server.test.ts",
+        "src/ts/process/request/geminiRelay.test.ts"
+      ]
+    },
+    {
       "id": "ASSET-NAME-NORMALIZED",
       "title": "모듈 에셋 이름 정규화와 캐릭터별 유사 검색",
       "criticality": "core-ux",

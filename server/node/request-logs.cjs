@@ -43,7 +43,7 @@ const MAX_BATCH_SIZE = 50;
 const ROTATE_EVERY_N_ROWS = 20;
 
 const CATEGORIES = ['llm', 'tts', 'image', 'translate', 'embedding', 'other'];
-const ROUTES = ['direct', 'proxy', 'job'];
+const ROUTES = ['direct', 'proxy', 'relay', 'job'];
 // Which part of the app issued the request — the request-log analog of the
 // system log's `source` tag. 'main'/'translate'/'memory'/'emotion'/'sub'
 // mirror RequestKind (src/ts/status/requestStatus.ts) so the same vocabulary

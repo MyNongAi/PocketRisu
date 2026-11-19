@@ -22,7 +22,7 @@ export type RequestLogCategory = 'llm' | 'tts' | 'image' | 'translate' | 'embedd
 export type RequestLogSource =
     | 'main' | 'translate' | 'memory' | 'emotion' | 'sub'
     | 'preview' | 'test' | 'tts' | 'image' | 'plugin' | 'other'
-export type RequestLogRoute = 'direct' | 'proxy' | 'job'
+export type RequestLogRoute = 'direct' | 'proxy' | 'relay' | 'job'
 
 export interface RequestLogUsage {
     inputTokens?: number

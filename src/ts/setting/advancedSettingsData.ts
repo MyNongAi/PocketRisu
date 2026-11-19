@@ -87,6 +87,17 @@ export const advancedRequestItems: SettingItem[] = [
         helpKey: 'rateLimitWaitMinutes', options: { min: 0, max: 30 }
     },
     {
+        id: 'adv.geminiRelayMode', type: 'select', labelKey: 'geminiRelayMode', bindKey: 'geminiRelayMode',
+        helpKey: 'geminiRelayMode', options: { selectOptions: [
+            { value: 'off', labelKey: 'geminiRelayOff' },
+            { value: 'us', labelKey: 'geminiRelayUs' },
+            { value: 'jp', labelKey: 'geminiRelayJp' },
+        ] }
+    },
+    { id: 'adv.geminiRelayUsUrl', type: 'text', labelKey: 'geminiRelayUsUrl', bindKey: 'geminiRelayUsUrl', condition: (ctx) => ctx.db.geminiRelayMode !== 'off' },
+    { id: 'adv.geminiRelayJpUrl', type: 'text', labelKey: 'geminiRelayJpUrl', bindKey: 'geminiRelayJpUrl', condition: (ctx) => ctx.db.geminiRelayMode !== 'off' },
+    { id: 'adv.geminiRelayKey', type: 'text', labelKey: 'geminiRelayKey', bindKey: 'geminiRelayKey', condition: (ctx) => ctx.db.geminiRelayMode !== 'off', options: { hideText: true } },
+    {
         id: 'adv.visionQual', type: 'select', fallbackLabel: 'Vision Quality', bindKey: 'gptVisionQuality',
         helpKey: 'gptVisionQuality',
         options: {
