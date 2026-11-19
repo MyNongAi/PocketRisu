@@ -1,11 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import type { Chat, character } from '../storage/database.svelte'
-import { captureGenerationTarget, resolveGenerationTarget, writeBackToTarget } from './generationTarget'
+import { captureGenerationTarget, hydratedSendTargetStillOpen, resolveGenerationTarget, writeBackToTarget } from './generationTarget'
 
 const chat = (id: string): Chat => ({ id, name: id, message: [] } as Chat)
 const character = (chaId: string, chats: Chat[]): character => ({ chaId, chats } as character)
 
 describe('generation target identity', () => {
+    it('allows a queued send after hydration only while its chat stays open', () => {
+        const placeholder = { ...chat('a'), _placeholder: true } as Chat
+        const a = character('A', [placeholder, chat('b')])
+        const b = character('B', [chat('c')])
+        const target = captureGenerationTarget(a, placeholder)
+
+        expect(hydratedSendTargetStillOpen([a, b], target, 0, 0)).toBe(false)
+        a.chats[0] = { ...chat('a'), message: [{ role: 'char', data: 'saved' }] }
+        expect(hydratedSendTargetStillOpen([a, b], target, 0, 0)).toBe(true)
+        expect(hydratedSendTargetStillOpen([a, b], target, 0, 1)).toBe(false)
+        expect(hydratedSendTargetStillOpen([a, b], target, 1, 0)).toBe(false)
+        a.chats.splice(0, 1)
+        expect(hydratedSendTargetStillOpen([a, b], target, 0, 0)).toBe(false)
+    })
+
     it('does not write a pre-send message into a chat page selected during an await', async () => {
         const a = chat('a')
         const b = chat('b')

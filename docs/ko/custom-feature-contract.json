@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-19",
+  "updatedAt": "2026-11-20",
   "features": [
     {
       "id": "QUICK-PRESET-SETTINGS",
@@ -194,6 +194,10 @@
         { "file": "server/node/pending-chat-payloads.cjs", "contains": "discard(chaId, chatId) {" },
         { "file": "server/node/server.cjs", "contains": "discardDroppedPendingChats(dbCache[filePath], next);" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "ensureChatHydrated" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "pointer-events-none absolute inset-x-0 top-3 z-[55]" },
+        { "file": "src/ts/process/generationTarget.ts", "contains": "hydratedSendTargetStillOpen" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "if (initialTarget.chat._placeholder)" },
+        { "file": "src/ts/hotkey.ts", "contains": "if (chat && !chat._placeholder) setChatMemoryPreset" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "evictHydratedChatCache" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "entry.dirty || inUse(entry.chaId, entry.chatId)) continue" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "setHydratedChatEvictionGuard((chaId, chatId) => {" },
@@ -208,6 +212,7 @@
         "src/ts/storage/chatStorage.test.ts",
         "src/ts/storage/chatStub.test.ts",
         "src/ts/storage/chatGuards.test.ts",
+        "src/ts/process/generationTarget.test.ts",
         "server/node/chat-body-store.test.ts",
         "server/node/archiveRestore.test.ts",
         "test/compat/chat-body-store.test.ts"
@@ -2348,8 +2353,8 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "inputEditRequest.set(key)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if idx > -1 && !replyInProgress}" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "requestInputText(msg, arg.requestInput)" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const capturedRequestInput = pressedInput(selectedChatRoom.message)" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const requestInput = pressedInput(targetChat.message)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "let capturedRequestInput = pressedInput(selectedChatRoom.message)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "let requestInput = pressedInput(targetChat.message)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = message.role === 'char' ? echoedInputIndex(messages, i) : -1;" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = echoedInputIndex(messages, Math.min(placeholderIndex, messages.length))" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "let echoVisible = $derived(typedText(echoShown ?? '', echoMessage?.nodeOnlyTypedInputs))" },
@@ -3232,7 +3237,7 @@
         { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "checked={DBState.db.nodeOnlyEditBotBackup !== false}" },
         { "file": "src/ts/process/mcp/toolGate.ts", "contains": "return editMode && getDatabase().nodeOnlyEditModeModel === 'sub' ? 'submodel' : 'model'" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "const routeSnapshot = arg.routeSnapshot ?? captureChatMainRoute(initialTarget.character, initialTarget.chat, moduleContext)" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const route = captureChatMainRoute(selectedCharacter, selectedChatRoom)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "let route = captureChatMainRoute(selectedCharacter, selectedChatRoom)" },
         { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "onclick={() => setEditModel('sub')}" },
         { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "data-edit-kinds" },
         { "file": "src/ts/process/mcp/risuaccess/editKinds.ts", "contains": "nodeOnlyEditModeKinds" }
@@ -4012,7 +4017,7 @@
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const undoId = recordMessageDeletion({ chaId, chatId: now.id, messages: removed, index: at, after })" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "action: { label: language.messageUndo, onClick: () => { undoMessageDeletion(undoId) } }," },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<ShDropdownMenuItem onSelect={() => { if (lastDeletion) undoMessageDeletion(lastDeletion.id) }} data-message-undo>" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<ShDropdownMenuItem disabled={!currentChatReady} onSelect={() => { if (currentChatReady && lastDeletion) undoMessageDeletion(lastDeletion.id) }} data-message-undo>" },
         { "file": "src/ts/gui/messageUndo.ts", "contains": "export function withDeletionRestored<M extends UndoMessage>(messages: readonly M[], deletion: MessageDeletion<M>)" },
         { "file": "src/ts/gui/messageUndoRun.ts", "contains": "const { messages, restored } = withDeletionRestored(chat.message, deletion as MessageDeletion<Message>)" }
       ],

@@ -311,6 +311,12 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
     const initialTarget = resolveGenerationTarget(DBState.db.characters, generationTarget)
     if (!initialTarget) return false
+    // Direct callers (plugins and pending sends included) must never run setup
+    // against a stub that hydration will replace with the saved chat body.
+    if (initialTarget.chat._placeholder) {
+        alertError('Chat is still loading. Please wait a moment.')
+        return false
+    }
     selectedChar = initialTarget.characterIndex
     selectedChat = initialTarget.chatIndex
     let nowChatroom = initialTarget.character
@@ -435,7 +441,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             }
         })
     }
-    // Block send if chat is still a placeholder (hydration not complete)
+    // A rebase can replace the slot after generation admission.
     if (nowChatroom.chats[selectedChat]?._placeholder) {
         recordReplyOutcome(realChatId, 'failed')
         alertError('Chat is still loading. Please wait a moment.')

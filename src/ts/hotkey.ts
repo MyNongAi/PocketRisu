@@ -294,7 +294,8 @@ export function initHotkey(){
 
 export async function quickMenu(){
     const db = getDatabase()
-    const showHypaV3 = (db.memoryPresets?.length ?? 0) > 0 && !!getCurrentChat()
+    const currentChat = getCurrentChat()
+    const showHypaV3 = (db.memoryPresets?.length ?? 0) > 0 && !!currentChat && !currentChat._placeholder
 
     const options = [
         language.presets,
@@ -320,7 +321,7 @@ export async function quickMenu(){
         memoryPresetSelectCallback.set((value) => {
             const char = getCurrentCharacter()
             const chat = getCurrentChat()
-            if (chat) setChatMemoryPreset(DBState.db, char, chat, value)
+            if (chat && !chat._placeholder) setChatMemoryPreset(DBState.db, char, chat, value)
         })
         openMemoryPresetList.set(true)
     }

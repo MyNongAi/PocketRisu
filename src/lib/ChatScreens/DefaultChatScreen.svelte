@@ -29,7 +29,7 @@
     import { sendChat } from "../../ts/process/index.svelte";
     import { recordReplyOutcome } from 'src/ts/gui/chatReplyStatus';
     import { auxiliaryGenerating, chatGenKey, endGeneration, generationStates, getGenerationAdmission, registerAbort, stopGeneration } from "../../ts/process/generationState";
-    import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from '../../ts/process/generationTarget';
+    import { captureGenerationTarget, hydratedSendTargetStillOpen, resolveGenerationTarget, type GenerationTargetIdentity } from '../../ts/process/generationTarget';
     import { captureChatModelRoute, type RequestModelRouteSnapshot } from '../../ts/process/request/modelPresetBinding';
     import { claimPendingSend, clearPendingSend, markResumable, resumableSends, takeResumable } from "../../ts/process/request/pendingSends";
     import { chatLoadFailures, ensureCurrentChatReady } from "../../ts/storage/chatStorage";
@@ -679,9 +679,9 @@ import { isMobile } from 'src/ts/platform'
 
         let generationTarget = captureGenerationTarget(selectedCharacter, selectedChatRoom)
         const genKey = chatGenKey(generationTarget.chatId)
-        const route = captureChatMainRoute(selectedCharacter, selectedChatRoom)
-        const emotionRoute = captureChatModelRoute(selectedChatRoom, 'emotion')
-        const memoryRoute = captureChatModelRoute(selectedChatRoom, 'memory')
+        let route = captureChatMainRoute(selectedCharacter, selectedChatRoom)
+        let emotionRoute = captureChatModelRoute(selectedChatRoom, 'emotion')
+        let memoryRoute = captureChatModelRoute(selectedChatRoom, 'memory')
         const admission = getGenerationAdmission(genKey, {
             characterId: generationTarget.characterId,
             chatId: generationTarget.chatId,
@@ -729,21 +729,35 @@ import { isMobile } from 'src/ts/platform'
         const capturedInput = messageInput
         const capturedTranslate = messageInputTranslate
         // The input versions shown now are what this send uses (inputVersions.ts).
-        const capturedRequestInput = pressedInput(selectedChatRoom.message)
+        let capturedRequestInput = pressedInput(selectedChatRoom.message)
+        const waitingForChat = !!selectedChatRoom._placeholder
         const capturedFiles = [...fileInput]
         const capturedDraftChaId = draftChaId
         const capturedDraftChatId = draftChatId
         const ready = await ensureGenerationTargetReady(generationTarget)
-        if(!ready || cancelledPreparingChatSends.has(genKey)) return
+        if(!ready && waitingForChat && !get(chatDeselected) && view.characterIndex === DBState.db.characters.indexOf(selectedCharacter) &&
+            view.chatIndex === selectedCharacter.chats.findIndex(chat => chat?.id === generationTarget.chatId)) {
+            alertError('Chat is still loading. Please wait a moment.')
+        }
+        // A send queued during hydration belongs only to the chat still open here.
+        if(!ready || (waitingForChat && get(chatDeselected)) || cancelledPreparingChatSends.has(genKey) ||
+            !hydratedSendTargetStillOpen(DBState.db.characters, generationTarget, view.characterIndex, view.chatIndex)) return
         generationTarget = ready.target
         const targetCharacter = ready.character
         const activeChat = ready.chat
+        if(waitingForChat) {
+            capturedRequestInput = pressedInput(activeChat.message)
+            route = captureChatMainRoute(targetCharacter, activeChat)
+            emotionRoute = captureChatModelRoute(activeChat, 'emotion')
+            memoryRoute = captureChatModelRoute(activeChat, 'memory')
+        }
         // Record the variables before this send and whether its input reaches
         // the chat, so a mid-send copy keeps the input in the right place.
         if(!continueResponse) endSendTurn = beginSendTurn(activeChat, capturedInput, capturedTranslate, v4)
         const claim = await claimChatForSend(targetCharacter.chaId, activeChat.id)
         if (claim.ok === true) chatLease = { chaId: targetCharacter.chaId, chatId: activeChat.id }
-        if (cancelledPreparingChatSends.has(genKey)) return
+        if (cancelledPreparingChatSends.has(genKey) || (waitingForChat && (get(chatDeselected) ||
+            !hydratedSendTargetStillOpen(DBState.db.characters, generationTarget, view.characterIndex, view.chatIndex)))) return
         if (claim.ok === false) {
             notifyError(chatWriterClaimMessage(claim))
             return
@@ -962,14 +976,16 @@ import { isMobile } from 'src/ts/platform'
         const genKey = chatGenKey(generationTarget.chatId)
         if(preparingChatSends.has(genKey)) { notifyInfo(language.replyBusy); return }
         // The input version shown now is what this reroll uses (inputVersions.ts).
-        const requestInput = pressedInput(targetChat.message)
+        let requestInput = pressedInput(targetChat.message)
         preparingChatSends.add(genKey)
         let chatLease: ChatLeaseTarget | null = null
         try {
         const ready = await ensureGenerationTargetReady(generationTarget)
-        if(!ready || cancelledPreparingChatSends.has(genKey)) return
+        if(!ready || cancelledPreparingChatSends.has(genKey) ||
+            !hydratedSendTargetStillOpen(DBState.db.characters, generationTarget, view.characterIndex, view.chatIndex)) return
         generationTarget = ready.target
         const activeChat = ready.chat
+        if (targetChat._placeholder) requestInput = pressedInput(activeChat.message)
         const claim = await claimChatForSend(ready.character.chaId, activeChat.id)
         if (claim.ok === true) chatLease = { chaId: ready.character.chaId, chatId: activeChat.id }
         if (cancelledPreparingChatSends.has(genKey)) return
@@ -1645,13 +1661,14 @@ import { isMobile } from 'src/ts/platform'
 
 <div class="w-full h-full relative" style={customStyle}>
     {#if view.active && $chatHydrationOverlayStore.active}
-        <div class="absolute inset-0 z-[55] flex items-center justify-center bg-bgcolor/45 backdrop-blur-[1px]" aria-live="polite" aria-busy="true">
-            <div class="flex items-center gap-2.5 rounded-full border border-darkborderc bg-bgcolor/90 px-4 py-2.5 text-textcolor shadow-lg">
+        <!-- 2026-11-20 request: loading runs behind usable chat controls. -->
+        <div class="pointer-events-none absolute inset-x-0 top-3 z-[55] flex justify-center px-3" aria-live="polite">
+            <div class="pointer-events-auto flex max-w-full items-center gap-2.5 rounded-full border border-darkborderc bg-bgcolor/95 px-4 py-2.5 text-textcolor shadow-lg">
                 <svg class="h-5 w-5 animate-spin text-primary" style="will-change: transform;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                 </svg>
-                <span class="text-sm">{$chatHydrationOverlayStore.text || language.chatLoading}</span>
+                <span class="min-w-0 truncate text-sm">{$chatHydrationOverlayStore.text || language.chatLoading}</span>
                 {#if showHydrationCancel && $chatHydrationOverlayStore.onCancel}
                     <button
                         class="ml-1 rounded-full border border-darkborderc px-2.5 py-1 text-xs text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor"
@@ -1829,7 +1846,7 @@ import { isMobile } from 'src/ts/platform'
                         </ShDropdownMenuTrigger>
                         <ShDropdownMenuContent side="top" align="start" class="min-w-48 max-h-[70vh] overflow-y-auto">
                             {#if lastDeletion}
-                                <ShDropdownMenuItem onSelect={() => { if (lastDeletion) undoMessageDeletion(lastDeletion.id) }} data-message-undo>
+                                <ShDropdownMenuItem disabled={!currentChatReady} onSelect={() => { if (currentChatReady && lastDeletion) undoMessageDeletion(lastDeletion.id) }} data-message-undo>
                                     <Undo2Icon /><span>{language.messageUndoMenu.replace('{}', String(lastDeletion.messages.length))}</span>
                                 </ShDropdownMenuItem>
                             {/if}
@@ -1855,7 +1872,7 @@ import { isMobile } from 'src/ts/platform'
                                 <GitBranch /><span>{language.branchGraphTitle}</span>
                             </ShDropdownMenuItem>
                             {#each additionalChatMenu as menu}
-                                <ShDropdownMenuItem onSelect={() => { menu.callback() }}>
+                                <ShDropdownMenuItem disabled={!currentChatReady} onSelect={() => { if (currentChatReady) menu.callback() }}>
                                     <PluginDefinedIcon ico={menu} /><span>{menu.name}</span>
                                 </ShDropdownMenuItem>
                             {/each}
@@ -1909,6 +1926,7 @@ import { isMobile } from 'src/ts/platform'
                                 <ReplyIcon /><span>{language.autoSuggest}</span>
                             </ShDropdownMenuItem>
                             <ShDropdownMenuItem onSelect={() => {
+                                if (!currentChatReady) return
                                 DBState.db.characters[view.characterIndex].chats[view.chatIndex].modules ??= []
                                 openModuleList = true
                             }}>
@@ -1919,13 +1937,14 @@ import { isMobile } from 'src/ts/platform'
                                     <RefreshCcwIcon /><span>{language.reroll}</span>
                                 </ShDropdownMenuItem>
                             {/if}
-                            <ShDropdownMenuItem onSelect={() => { quickMenu() }}>
+                            <ShDropdownMenuItem disabled={!currentChatReady} onSelect={() => { if (currentChatReady) quickMenu() }}>
                                 <ZapIcon /><span>{language.hotkeyDesc.quickMenu}</span>
                             </ShDropdownMenuItem>
                         </ShDropdownMenuContent>
                     </ShDropdownMenu>
                 {:else}
                     <button type="button" aria-label="Add empty assistant message" onclick={(e) => {
+                        if (!currentChatReady) return
                         DBState.db.characters[view.characterIndex].chats[view.chatIndex].message.push({
                             role: 'char',
                             data: ''
@@ -2287,8 +2306,8 @@ import { isMobile } from 'src/ts/platform'
 {#if view.pane === 'main' && additionalFloatingActionButtons.length > 0}
     <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
         {#each additionalFloatingActionButtons as button}
-            <button class="bg-primary text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-primary/90 transition-colors" onclick={() => {
-                button.callback()
+            <button disabled={!currentChatReady} class="bg-primary text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50" onclick={() => {
+                if (currentChatReady) button.callback()
             }}>
                 <PluginDefinedIcon ico={button} />
             </button>

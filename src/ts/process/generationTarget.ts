@@ -99,3 +99,15 @@ export function resolveGenerationTarget(
     if (identity.chatId && chat.id !== identity.chatId) return null
     return { character, chat, characterIndex, chatIndex }
 }
+
+/** A queued composer send may start only if its hydrated target is still shown. */
+export function hydratedSendTargetStillOpen(
+    characters: readonly character[],
+    identity: GenerationTargetIdentity,
+    characterIndex: number,
+    chatIndex: number,
+): boolean {
+    const target = resolveGenerationTarget(characters, identity)
+    return !!target && !target.chat._placeholder &&
+        target.characterIndex === characterIndex && target.chatIndex === chatIndex
+}
