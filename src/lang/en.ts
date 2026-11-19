@@ -2054,7 +2054,6 @@ export const languageEnglish = {
     modelPresetToolUseHelp: "Let this preset call your configured tools (MCP). Off by default. Tool runs are sent without streaming.",
     modelPresetAbilities: "Model abilities",
     modelPresetPickSuggestion: "Choose from suggestions…",
-    vertexGlobalOnlyLocationWarning: "This model is only served from global. Other regions return a 404 error.",
     modelPresetSnapshotEmpty: "This preset's profile data is empty. Re-download or replace the profile to restore its settings.",
     modelPresetImageInput: "Image input",
     modelPresetImageInputHelp: "Send images to the model. Off by default. Turn on only for models that accept images (e.g. Ollama gemma3, llava).",

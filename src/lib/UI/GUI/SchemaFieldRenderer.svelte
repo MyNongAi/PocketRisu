@@ -13,8 +13,6 @@
     import ShSelect from "./ShSelect.svelte";
     import OptionInput from "./OptionInput.svelte";
     import CheckInput from "./CheckInput.svelte";
-    import VertexLocationPicker from "./VertexLocationPicker.svelte";
-    import { isVertexLocationField } from "src/ts/preset/vertexLocations";
 
     interface Props {
         schemaField: RegistryFieldSchema;
@@ -29,13 +27,6 @@
 
     const fieldKey = $derived(schemaField.key);
     const isAuthField = $derived(schemaField.mapsTo?.target === 'auth');
-    const vertexModelId = $derived.by(() => {
-        const userModelId = userValues.modelId;
-        if (typeof userModelId === 'string' && userModelId.length > 0) return userModelId;
-        const schemaDefault = preset?.profileSnapshot.schema.find(field => field?.key === 'modelId')?.default;
-        if (typeof schemaDefault === 'string' && schemaDefault.length > 0) return schemaDefault;
-        return preset?.profileSnapshot.modelId;
-    });
 
     // Reset (clear-to-undefined) is offered for optional scalar widgets where
     // a value is present. textarea/string-array/json/key-value let the user
@@ -165,10 +156,7 @@
         <span class="text-xs text-textcolor2">{localizedDescription}</span>
     {/if}
 
-    <!-- VERTEX-LOCATION-PICKER: the Vertex Location field picks a region from a list. -->
-    {#if isVertexLocationField(schemaField, uiField)}
-        <VertexLocationPicker bind:value={userValues[fieldKey] as string} placeholder={uiField.placeholder ?? ''} modelId={vertexModelId} />
-    {:else if uiField.widget === 'text'}
+    {#if uiField.widget === 'text'}
         <TextInput
             bind:value={userValues[fieldKey] as string}
             placeholder={uiField.placeholder ?? ''}

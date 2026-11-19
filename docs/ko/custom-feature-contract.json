@@ -1613,23 +1613,6 @@
       ]
     },
     {
-      "id": "VERTEX-LOCATION-PICKER",
-      "title": "Vertex Location 리전 선택과 직접 입력",
-      "criticality": "core-ux",
-      "ownerFiles": [
-        "src/ts/preset/vertexLocations.ts",
-        "src/lib/UI/GUI/VertexLocationPicker.svelte",
-        "src/lib/UI/GUI/SchemaFieldRenderer.svelte"
-      ],
-      "requiredMarkers": [
-        { "file": "src/lib/UI/GUI/SchemaFieldRenderer.svelte", "contains": "VERTEX-LOCATION-PICKER: the Vertex Location field picks a region from a list." },
-        { "file": "src/lib/UI/GUI/VertexLocationPicker.svelte", "contains": "VERTEX-LOCATION-PICKER: global-only models warn on a regional Location." }
-      ],
-      "regressionTests": [
-        "src/ts/preset/vertexLocations.test.ts"
-      ]
-    },
-    {
       "id": "PLUGIN-FILE-DROP",
       "title": "앱 어디에나 .js/.ts 파일 끌어 놓아 플러그인 설치",
       "criticality": "core-ux",
