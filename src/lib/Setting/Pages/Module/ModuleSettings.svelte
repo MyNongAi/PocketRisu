@@ -23,6 +23,8 @@
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
+    // LEGACY-MODULE-FOLDERS
+    import { legacyModuleFolderView } from "src/ts/process/legacyModuleFolderView";
     import { activationHistoryAfterPlacement, activationHistoryFromDisplay, getLatestModuleCatalogPromotion, liftModulesToNewest, unpinModuleFavoritesOnce, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { listTitleColor, shownMissingAssetCount } from "src/ts/gui/titleColors";
     import { openItemInfo } from "src/ts/gui/itemInfo";
@@ -70,6 +72,15 @@
             ? 'registered'
             : 'recent',
     )
+    // LEGACY-MODULE-FOLDERS: this device's catalog view, never a DB setting.
+    function readLegacyModuleFolders() {
+        try { return typeof localStorage !== 'undefined' && localStorage.getItem('risu-module-folder-legacy') === 'true' } catch { return false }
+    }
+    let legacyModuleFolders = $state(readLegacyModuleFolders())
+    function toggleLegacyModuleFolders() {
+        legacyModuleFolders = !legacyModuleFolders
+        try { localStorage.setItem('risu-module-folder-legacy', String(legacyModuleFolders)) } catch {}
+    }
     // 최근순 follows the activations and the drags. Above it the favorites
     // hold the top (the user's rule, 2026-10-27: "즐찾만 고정"), and under
     // them the modules on now (2026-10-30; interleaveModuleCatalogGroups).
@@ -91,6 +102,8 @@
             DBState.db.modules,
             recencyOptions,
         ))
+    // LEGACY-MODULE-FOLDERS
+    let legacyFolderView = $derived(legacyModuleFolders ? legacyModuleFolderView(displayModules, displayFolders) : undefined)
     let catalogPromotion = $derived(moduleCatalogSort === 'recent'
         ? getLatestModuleCatalogPromotion(
             DBState.db.modules,
@@ -133,10 +146,10 @@
         list.scrollTop = 0
         return true
     }))
-    let promotedModuleIndex = $derived(catalogPromotion && !catalogPromotion.folderId
+    let promotedModuleIndex = $derived(catalogPromotion && (!catalogPromotion.folderId || (legacyModuleFolders && !legacyFolderView?.folders.some((folder) => folder.id === catalogPromotion?.folderId))) // LEGACY-MODULE-FOLDERS
         ? displayModules.findIndex((module) => module.id === catalogPromotion?.moduleId)
         : -1)
-    let promotedFolderId = $derived(catalogPromotion?.folderId ?? '')
+    let promotedFolderId = $derived(legacyModuleFolders && !legacyFolderView?.folders.some((folder) => folder.id === catalogPromotion?.folderId) ? '' : catalogPromotion?.folderId ?? '') // LEGACY-MODULE-FOLDERS
 
     function setModuleCatalogSort(next: ModuleCatalogSort) {
         moduleCatalogSort = next
@@ -364,6 +377,13 @@
      */
     function applyPlacements(placements: FolderedItemPlacement[], fromDrop = false) {
         if (placements.length !== displayModules.length) return
+        // LEGACY-MODULE-FOLDERS: keep hidden automatic placements when a menu moves one visible row.
+        if (legacyModuleFolders && legacyFolderView) {
+            const originalIds = new Map(DBState.db.modules.map((module) => [module.id, module.folderId]))
+            placements = placements.map(({ index, folderId }) => ({ index, folderId: folderId === legacyFolderView.itemFolderIds[index]
+                ? originalIds.get(displayModules[index]?.id)
+                : folderId }))
+        }
         const currentFolders = displayFolders
         const folderById = new Map(placements.map(({ index, folderId }) => [displayModules[index]?.id, folderId]))
         // The rows before and after, read before the modules change under displayModules.
@@ -417,7 +437,55 @@
         DBState.db.moduleFolders = recordModuleFolderOrder(DBState.db.moduleFolders)
     }
 
-    function applyFolders(next: typeof DBState.db.moduleFolders) {
+    // LEGACY-MODULE-FOLDERS: the row menu names one module and one real destination.
+    function moveLegacyModuleToFolder(index: number, folderId: string | undefined) {
+        const id = displayModules[index]?.id
+        if (!id) return
+        const current = DBState.db.modules.find((module) => module.id === id)
+        if (!current || current.folderId === folderId) return
+        const before = DBState.db.moduleFolders ?? []
+        const favoritesId = before.find(isModuleFavoritesFolder)?.id
+        DBState.db.modules = DBState.db.modules.map((module) => {
+            if (module.id !== id) return module
+            const favorite = favoriteAfterMove(!!module.favorite, module.folderId, folderId, favoritesId)
+            return { ...module, folderId, favorite }
+        })
+        const synchronized = synchronizeModuleFolderMembership(DBState.db.modules, before, { importLegacyWhenFolderIdsEmpty: false })
+        const dissolved = dissolveShrunkenModuleFolders(DBState.db.modules, synchronized, before)
+        DBState.db.modules = dissolved.modules
+        DBState.db.moduleFolders = dissolved.folders
+        syncFavoriteModules()
+        if (moduleCatalogSort === 'recent') {
+            DBState.db.moduleActivationHistory = recordModuleActivation(
+                seedModuleActivationHistory(DBState.db.moduleActivationHistory, DBState.db.enabledModules), id,
+            )
+        }
+    }
+
+    function applyFolders(next: PromptPresetFolder[]) {
+        // LEGACY-MODULE-FOLDERS: merge edits to real folders without erasing hidden folders or saved parents.
+        if (legacyModuleFolders) {
+            const shownIds = new Set(legacyFolderView?.folders.map((folder) => folder.id) ?? [])
+            const current = DBState.db.moduleFolders ?? []
+            const originalById = new Map(current.map((folder) => [folder.id, folder]))
+            const queue = next.filter((folder) => shownIds.has(folder.id) || !originalById.has(folder.id))
+            const restoreParent = (drawn: PromptPresetFolder) => {
+                const original = originalById.get(drawn.id)
+                return original ? { ...original, ...drawn, nodeOnlyParentFolderId: original.nodeOnlyParentFolderId } : drawn
+            }
+            const merged = current.flatMap((folder) => {
+                if (!shownIds.has(folder.id)) return [folder]
+                const replacement = queue.shift()
+                return replacement ? [restoreParent(replacement)] : []
+            })
+            merged.push(...queue.map(restoreParent))
+            const keptIds = new Set(merged.map((folder) => folder.id))
+            next = merged.map((folder) => {
+                const parent = folder.nodeOnlyParentFolderId
+                if (!parent || keptIds.has(parent)) return folder
+                return { ...folder, nodeOnlyParentFolderId: originalById.get(parent)?.nodeOnlyParentFolderId }
+            })
+        }
         DBState.db.moduleFolders = recordModuleFolderOrder(synchronizeModuleFolderMembership(
             DBState.db.modules,
             next,
@@ -497,19 +565,26 @@
             <ShButton size="sm" variant={moduleCatalogSort === 'recent' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('recent')} title="최근 활성화순" aria-label="최근순">
                 <Clock3Icon /><span class="hidden @[20rem]/folders:inline">최근순</span>
             </ShButton>
+            <!-- LEGACY-MODULE-FOLDERS -->
+            <ShButton size="sm" variant={legacyModuleFolders ? 'default' : 'outline'} onclick={toggleLegacyModuleFolders} title="마이그레이션 전 9월 형식: 폴더는 한 단계, 자동 폴더([링크]·[링크2]·[프롬]·★와 링크 안의 [유사 후보]) 없이. 보기만 바뀌고 배치는 그대로" aria-label="구버전 폴더">
+                <span>구버전 폴더</span>
+            </ShButton>
         </div>
     {/snippet}
 
     <SettingPage title={language.modules}>
     <FileDropIndicator active={moduleFileDrop.active} icon={HardDriveUpload} label={`${language.importModule} · CHARX / RISUM / ${language.linkDropLabel}`} />
 
+    <!-- LEGACY-MODULE-FOLDERS: pass a flattened drawing view to the catalog. -->
     <FolderedList
         bind:searchQuery={moduleSearchQuery}
         folderToolbarActions={sidePanel ? sortActions : undefined}
         searchActions={sidePanel ? undefined : sortActions}
-        maxFolderDepth={5}
-        folders={displayFolders}
-        itemFolderIds={displayModules.map(m => m.folderId)}
+        maxFolderDepth={legacyModuleFolders ? 1 : 5}
+        flatFolderView={legacyModuleFolders}
+        onItemMoveToFolder={legacyModuleFolders ? moveLegacyModuleToFolder : undefined}
+        folders={legacyFolderView?.folders ?? displayFolders}
+        itemFolderIds={legacyFolderView?.itemFolderIds ?? displayModules.map(m => m.folderId)}
         itemSearchTexts={displayModules.map(m => `${m.name}\n${m.description ?? ''}`)}
         showItemCount
         storageKey="risu-module-folders-expanded-v3"
@@ -519,10 +594,10 @@
         interleaveItems
         promotedItemIndex={promotedModuleIndex}
         promotedFolderId={promotedFolderId}
-        favoriteItemIndexes={favoriteModuleIndexes}
-        activeItemIndexes={activeModuleIndexes}
+        favoriteItemIndexes={legacyModuleFolders ? undefined : favoriteModuleIndexes}
+        activeItemIndexes={legacyModuleFolders ? undefined : activeModuleIndexes}
         selectedIndex={foundModuleIndex}
-        reorderDisabled={moduleCatalogSort !== 'recent'}
+        reorderDisabled={legacyModuleFolders || moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}
         onFolderColor={changeFolderColor}
         onFolderFavorite={toggleFolderFavorite}

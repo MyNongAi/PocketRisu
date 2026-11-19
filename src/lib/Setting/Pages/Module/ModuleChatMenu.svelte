@@ -20,6 +20,8 @@
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import { onDestroy, onMount, untrack } from "svelte";
     import { getLatestModuleCatalogPromotion, interleaveModuleCatalogGroups, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation, unpinModuleFavoritesOnce } from "src/ts/process/moduleSort";
+    // LEGACY-MODULE-FOLDERS
+    import { legacyModuleFolderView } from "src/ts/process/legacyModuleFolderView";
     import { listTitleColor, shownMissingAssetCount } from "src/ts/gui/titleColors";
     import { restoreIllustrationPresets } from "src/ts/process/illustrationRun";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
@@ -64,6 +66,12 @@
             activationHistory: DBState.db.moduleActivationHistory,
         },
     ))
+    // LEGACY-MODULE-FOLDERS: read the same per-device view choice as ModuleSettings.
+    function readLegacyModuleFolders() {
+        try { return typeof localStorage !== 'undefined' && localStorage.getItem('risu-module-folder-legacy') === 'true' } catch { return false }
+    }
+    let legacyModuleFolders = $state(readLegacyModuleFolders())
+    let legacyFolderView = $derived(legacyModuleFolders ? legacyModuleFolderView(sortedModules, sortedFolders) : undefined)
     const catalogPromotion = $derived(getLatestModuleCatalogPromotion(
         DBState.db.modules,
         DBState.db.moduleFolders ?? [],
@@ -77,8 +85,10 @@
         },
     ))
     const groups = $derived.by(() => {
-        const grouped = groupByFolder(sortedModules.map(m => m.folderId), sortedFolders)
-        const promotedIndex = catalogPromotion && !catalogPromotion.folderId
+        // LEGACY-MODULE-FOLDERS
+        const grouped = groupByFolder(legacyFolderView?.itemFolderIds ?? sortedModules.map(m => m.folderId), legacyFolderView?.folders ?? sortedFolders)
+        const promotedFolderId = legacyModuleFolders && !legacyFolderView?.folders.some((folder) => folder.id === catalogPromotion?.folderId) ? '' : catalogPromotion?.folderId
+        const promotedIndex = catalogPromotion && !promotedFolderId
             ? sortedModules.findIndex((module) => module.id === catalogPromotion.moduleId)
             : -1
         // Favorites hold the top, and under them the modules lit here (on
@@ -88,7 +98,7 @@
         const bot = DBState.db.characters[$selectedCharID]
         const active = new Set(sortedModules.flatMap((module, index) => module
             && (DBState.db.enabledModules.includes(module.id) || !!chat?.modules?.includes(module.id) || !!bot?.modules?.includes(module.id)) ? [index] : []))
-        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId, favorites, active)
+        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, promotedFolderId, legacyModuleFolders ? undefined : favorites, legacyModuleFolders ? undefined : active)
         const result: ModuleMenuGroup[] = []
         for (const block of order) {
             if (block.kind === 'root') {
@@ -201,6 +211,7 @@
     }
 
     onMount(() => {
+        legacyModuleFolders = readLegacyModuleFolders() // LEGACY-MODULE-FOLDERS
         unpinModuleFavoritesOnce(DBState.db)
         syncFavoriteModules()
         restoreIllustrationPresets()

@@ -55,6 +55,10 @@
          *  top-level folders only). The module list goes deeper, as the bot
          *  list does (the user's request, 2026-10-17). */
         maxFolderDepth?: number;
+        /** LEGACY-MODULE-FOLDERS: hide nesting commands while a flat catalog view is drawn. */
+        flatFolderView?: boolean;
+        /** LEGACY-MODULE-FOLDERS: place one real item without rewriting the flattened view. */
+        onItemMoveToFolder?: (index: number, folderId: string | undefined) => void;
         /** Render items without a folder as ordinary root rows instead of a
          *  synthetic "Uncategorized" folder card. The root remains a drop
          *  target so items can still be dragged out of real folders. */
@@ -162,6 +166,8 @@
         rowContextMenu = false,
         rowHoldMenu = true,
         maxFolderDepth = 1,
+        flatFolderView = false,
+        onItemMoveToFolder,
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
@@ -434,6 +440,8 @@
         const sel = parseInt(await alertSelect(options));
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
         const folderId = sel === 0 ? undefined : tree[sel - 1].folder.id;
+        // LEGACY-MODULE-FOLDERS
+        if (onItemMoveToFolder) { onItemMoveToFolder(index, folderId); return; }
         const placements = placementsFromData().filter(p => p.index !== index);
         // Append at the end of the chosen group.
         const lastInGroup = placements.map(p => p.folderId).lastIndexOf(folderId);
@@ -718,9 +726,10 @@
             <ShDropdownMenuItem disabled={!canMoveFolder(folder, 1)} onSelect={() => moveFolder(folder, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
             {#if onFolderColor}<ShDropdownMenuItem onSelect={() => onFolderColor(folder)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>{/if}
             {#if onFolderFavorite && !folder.nodeOnlyFavoritesFolder}<ShDropdownMenuItem onSelect={() => onFolderFavorite(folder)}><StarIcon /><span>{folder.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>{/if}
-            {#if canHoldFolders(folder)}<ShDropdownMenuItem onSelect={() => createSubfolder(folder)}><FolderPlusIcon /><span>하위 폴더 만들기</span></ShDropdownMenuItem>{/if}
-            {#if nestTargets(folder).length > 0}<ShDropdownMenuItem onSelect={() => moveFolderInto(folder)}><FolderInputIcon /><span>다른 폴더 안으로</span></ShDropdownMenuItem>{/if}
-            {#if parentOf(folder) && !inLinkFolder(folder)}<ShDropdownMenuItem onSelect={() => moveFolderOut(folder)}><FolderOutputIcon /><span>폴더 밖으로 꺼내기</span></ShDropdownMenuItem>{/if}
+            <!-- LEGACY-MODULE-FOLDERS -->
+            {#if !flatFolderView && canHoldFolders(folder)}<ShDropdownMenuItem onSelect={() => createSubfolder(folder)}><FolderPlusIcon /><span>하위 폴더 만들기</span></ShDropdownMenuItem>{/if}
+            {#if !flatFolderView && nestTargets(folder).length > 0}<ShDropdownMenuItem onSelect={() => moveFolderInto(folder)}><FolderInputIcon /><span>다른 폴더 안으로</span></ShDropdownMenuItem>{/if}
+            {#if !flatFolderView && parentOf(folder) && !inLinkFolder(folder)}<ShDropdownMenuItem onSelect={() => moveFolderOut(folder)}><FolderOutputIcon /><span>폴더 밖으로 꺼내기</span></ShDropdownMenuItem>{/if}
             {@render folderMenuItems?.(folder, indexes)}
             {#if showFolderDelete}
                 <ShDropdownMenuSeparator />
