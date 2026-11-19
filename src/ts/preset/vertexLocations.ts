@@ -33,3 +33,11 @@ export function isVertexLocationField(schemaField: RegistryFieldSchema, uiField:
 export function isKnownVertexLocation(value: string | undefined): boolean {
     return VERTEX_LOCATIONS.some(location => location.value === value)
 }
+
+export function isVertexGlobalOnlyModel(modelId: string | undefined): boolean {
+    if (!modelId) return false
+    const id = modelId.replace(/^(?:google\/|publishers\/google\/models\/)/, '')
+    return id.startsWith('gemini-4')
+        || /^gemini-3-.*-preview$/.test(id)
+        || /^gemini-3\.[5678]-flash/.test(id)
+}

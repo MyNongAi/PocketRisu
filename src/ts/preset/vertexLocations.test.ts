@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { BaseProviderDefinition, RegistryFieldSchema, RegistryUiField } from './types'
 import vertexGeminiNative from './registry/bundled/base-providers/vertex-gemini-native.json'
 import vertexOpenAI from './registry/bundled/base-providers/vertex-openai.json'
-import { VERTEX_LOCATIONS, isKnownVertexLocation, isVertexLocationField, vertexLocationLabel } from './vertexLocations'
+import { VERTEX_LOCATIONS, isKnownVertexLocation, isVertexGlobalOnlyModel, isVertexLocationField, vertexLocationLabel } from './vertexLocations'
 
 describe('Vertex locations', () => {
     test('values are unique and in display order', () => {
@@ -45,5 +45,17 @@ describe('Vertex locations', () => {
         expect(isKnownVertexLocation('')).toBe(false)
         expect(isKnownVertexLocation(undefined)).toBe(false)
         expect(isKnownVertexLocation('custom-region1')).toBe(false)
+    })
+
+    test('recognizes global-only Gemini models and publisher prefixes', () => {
+        for (const id of [
+            'gemini-4-argon', 'gemini-4-carbon', 'gemini-3-pro-preview',
+            'gemini-3.5-flash', 'gemini-3.6-flash',
+            'gemini-3.7-flash', 'gemini-3.8-flash',
+            'google/gemini-4-argon',
+            'publishers/google/models/gemini-4-carbon',
+        ]) expect(isVertexGlobalOnlyModel(id)).toBe(true)
+        expect(isVertexGlobalOnlyModel('gemini-2.5-pro')).toBe(false)
+        expect(isVertexGlobalOnlyModel(undefined)).toBe(false)
     })
 })

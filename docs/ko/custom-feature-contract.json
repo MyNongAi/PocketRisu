@@ -1622,7 +1622,8 @@
         "src/lib/UI/GUI/SchemaFieldRenderer.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/lib/UI/GUI/SchemaFieldRenderer.svelte", "contains": "VERTEX-LOCATION-PICKER: the Vertex Location field picks a region from a list." }
+        { "file": "src/lib/UI/GUI/SchemaFieldRenderer.svelte", "contains": "VERTEX-LOCATION-PICKER: the Vertex Location field picks a region from a list." },
+        { "file": "src/lib/UI/GUI/VertexLocationPicker.svelte", "contains": "VERTEX-LOCATION-PICKER: global-only models warn on a regional Location." }
       ],
       "regressionTests": [
         "src/ts/preset/vertexLocations.test.ts"
