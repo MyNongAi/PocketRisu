@@ -5,6 +5,7 @@
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, markNewSwipe, seeShownSwipe, shiftErrorMarkAfterDelete, shiftNewMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
+    import { clearSendEcho, setSendEcho, type PendingSendEcho } from 'src/ts/gui/sendEcho';
     import { boundPersona } from 'src/ts/nameOnlyPersona';
     import { pressedInput, recordSentRequestInput, requestedInputVersion, type SentInput } from 'src/ts/inputVersions';
     import { mergeAuxLines } from 'src/ts/process/auxLorebook';
@@ -102,6 +103,8 @@ import { isMobile } from 'src/ts/platform'
     // Reactive so the composer shows Stop while a send or reroll prepares.
     const preparingChatSends = new SvelteSet<string>()
     const cancelledPreparingChatSends = new Set<string>()
+    // SEND-ECHO (2026-11-20): the user's text is visible during send preparation, only on this screen.
+    let pendingSendEchoes = $state(new Map<string, PendingSendEcho>())
     const BLOCKED_SEND_STOP_OFFER_MS = 180_000
     let toggleStickers:boolean = $state(false)
     let fileInput:string[] = $state([])
@@ -129,6 +132,7 @@ import { isMobile } from 'src/ts/platform'
     })
     let currentCharacter = $derived(view.character)
     let currentChatSlot = $derived(view.chat)
+    let currentSendEcho = $derived(pendingSendEchoes.get(currentChatSlot?.id ?? ''))
     let currentChatReady = $derived(!!currentChatSlot && !currentChatSlot._placeholder)
     let currentChat = $derived(currentChatReady ? currentChatSlot.message : [])
     let currentChatFmIndex = $derived(currentChatReady ? (currentChatSlot.fmIndex ?? -1) : -1)
@@ -724,6 +728,7 @@ import { isMobile } from 'src/ts/platform'
         preparingChatSends.add(genKey)
         let chatLease: ChatLeaseTarget | null = null
         let endSendTurn: (() => void) | null = null
+        let echoSendId: string | null = null
 
         try {
         const capturedInput = messageInput
@@ -734,6 +739,8 @@ import { isMobile } from 'src/ts/platform'
         const capturedFiles = [...fileInput]
         const capturedDraftChaId = draftChaId
         const capturedDraftChatId = draftChatId
+        echoSendId = !continueResponse && capturedInput !== '' && !capturedInput.startsWith('/') ? v4() : null
+        if (echoSendId) pendingSendEchoes = setSendEcho(pendingSendEchoes, generationTarget.chatId, { sendId: echoSendId, text: capturedInput })
         const ready = await ensureGenerationTargetReady(generationTarget)
         if(!ready && waitingForChat && !get(chatDeselected) && view.characterIndex === DBState.db.characters.indexOf(selectedCharacter) &&
             view.chatIndex === selectedCharacter.chats.findIndex(chat => chat?.id === generationTarget.chatId)) {
@@ -829,6 +836,7 @@ import { isMobile } from 'src/ts/platform'
                 // What was typed, before the bot's regex and Lua edited it:
                 // the input under a reply and the chat title show this (typedInput.ts).
                 rememberTypedInput(sent, inputToSend)
+                if (echoSendId) pendingSendEchoes = clearSendEcho(pendingSendEchoes, generationTarget.chatId, echoSendId)
                 cha.push(sent)
                 markSendInputPushed(activeChat.id)
             }
@@ -840,6 +848,7 @@ import { isMobile } from 'src/ts/platform'
                     name: null
                 }
                 rememberTypedInput(sent, inputToSend)
+                if (echoSendId) pendingSendEchoes = clearSendEcho(pendingSendEchoes, generationTarget.chatId, echoSendId)
                 cha.push(sent)
                 markSendInputPushed(activeChat.id)
             }
@@ -888,6 +897,7 @@ import { isMobile } from 'src/ts/platform'
         if (sent && !continueResponse) markGeneratedReply(generationTarget, sendStartedAt)
         return sent
         } finally {
+            if (echoSendId) pendingSendEchoes = clearSendEcho(pendingSendEchoes, generationTarget.chatId, echoSendId)
             endSendTurn?.()
             preparingChatSends.delete(genKey)
             cancelledPreparingChatSends.delete(genKey)
@@ -1362,6 +1372,8 @@ import { isMobile } from 'src/ts/platform'
     function abortChat(){
         if (currentChatPreparing && !currentChatGenerating) {
             cancelledPreparingChatSends.add(currentChatGenKey())
+            const echo = pendingSendEchoes.get(currentChatSlot?.id ?? '')
+            if (echo && currentChatSlot) pendingSendEchoes = clearSendEcho(pendingSendEchoes, currentChatSlot.id, echo.sendId)
             return
         }
         stopGeneration(currentChatGenKey(), { onForceReleased: onGenerationForceReleased })
@@ -2255,6 +2267,7 @@ import { isMobile } from 'src/ts/platform'
                 bind:this={chatsInstance}
                 messages={currentChat}
                 chatBusy={currentChatGenerating || currentChatPreparing}
+                sendEcho={currentSendEcho}
                 loadPages={loadPages}
                 onReroll={reroll}
                 onNextSwipe={nextSwipe}

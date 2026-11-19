@@ -4145,6 +4145,24 @@
       "regressionTests": []
     },
     {
+      "id": "SEND-ECHO",
+      "title": "보낸 인풋이 실제 메시지로 붙기 전까지 화면에 대기 표시",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/ChatScreens/Chats.svelte",
+        "src/ts/gui/sendEcho.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "SEND-ECHO (2026-11-20)" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "data-send-echo" },
+        { "file": "src/ts/gui/sendEcho.ts", "contains": "SEND-ECHO (2026-11-20)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/sendEcho.test.ts"
+      ]
+    },
+    {
       "id": "MODULE-CHARX-ROUTING",
       "title": "모듈 이름의 CHARX는 어느 가져오기 경로에서도 모듈로 처리",
       "criticality": "core-ux",

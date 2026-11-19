@@ -16,6 +16,7 @@
     import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, type RerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { SWIPE_ROW_BUTTONS, buttonRows, rowAt, rowFromBottom } from 'src/ts/gui/swipeAnchor';
     import type { NewestReplyControls } from './floatingSwipe';
+    import type { PendingSendEcho } from 'src/ts/gui/sendEcho';
     
     // The pane this list draws (chatPanes.svelte.ts). Messages are mounted
     // by hand below; they get this component's context so they know it too.
@@ -26,6 +27,7 @@
     let {
         messages,
         chatBusy = false,
+        sendEcho = null,
         currentCharacter,
         onReroll,
         onNextSwipe = () => {},
@@ -42,6 +44,8 @@
         messages: Message[]
         /** The displayed chat is generating or preparing a reply. */
         chatBusy?: boolean
+        /** Display-only composer send awaiting its real message. */
+        sendEcho?: PendingSendEcho | null
         currentCharacter: character
         onReroll: () => void
         onNextSwipe?: (index?: number) => void
@@ -605,7 +609,7 @@
         let best: HTMLElement | null = null
         let bestTop = Infinity
         const greeting = greetingElement()
-        const candidates = Array.from(chatBody.children) as HTMLElement[]
+        const candidates = Array.from(chatBody.children).filter((child) => !(child as HTMLElement).hasAttribute('data-send-echo')) as HTMLElement[]
         if (greeting) candidates.push(greeting)
         for (const child of candidates) {
             const rect = child.getBoundingClientRect()
@@ -908,6 +912,25 @@
     let previousLoadPages = 0;
     let previousChatRoomId: string | null = null;
 
+    let previousEchoSendId: string | null = null
+    $effect.pre(() => {
+        const sendId = sendEcho?.sendId ?? null
+        if (sendId === previousEchoSendId) return
+        previousEchoSendId = sendId
+        // Capture this before Svelte inserts/removes the tail item. Its size
+        // change can make a scroll event report that the reader is no longer
+        // at the tail before the resize observer gets to follow it.
+        if (!checkIfAtBottom()) return
+        // A reader at the tail follows the echo in: the resize observer would
+        // otherwise keep their line and undo the move, leaving the echo under
+        // the composer. The real message's arrival ends this pin (`added`).
+        if (sendId) {
+            pinnedToTail = true
+            pinnedAt = performance.now()
+        }
+        scheduleTailMove('tail')
+    })
+
     $effect(() => {
         void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
         void $rerollPlaceholders; // and the old reply shown while it is rerolled
@@ -952,4 +975,18 @@
 
 </script>
 
-<div class="flex flex-col-reverse" bind:this={chatBody}></div>
+<div class="flex flex-col-reverse" bind:this={chatBody}>
+    {#if sendEcho}
+        <!-- Order puts this after the newest manually mounted message in the
+             reversed flex column, without giving it a message slot. -->
+        <div class="order-first w-full flex justify-end px-6 py-2 text-textcolor" data-log-skip data-send-echo aria-live="polite">
+            <div class="max-w-[85%] min-w-0 rounded-lg border border-darkborderc bg-darkbg/80 px-3 py-2 opacity-60">
+                <div class="whitespace-pre-wrap wrap-break-word">{sendEcho.text}</div>
+                <div class="mt-1 flex items-center gap-1.5 text-xs text-textcolor2">
+                    <span class="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true"></span>
+                    보내는 중
+                </div>
+            </div>
+        </div>
+    {/if}
+</div>
