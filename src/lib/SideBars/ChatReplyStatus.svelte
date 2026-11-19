@@ -1,3 +1,4 @@
+<!-- REPLY-STATUS-OUTCOME: the chat list's mark tells a failed reply from a finished one. -->
 <script lang="ts">
     // A chat row's reply status: the composer's spinner (green) while a reply
     // for this chat runs, foreground, on the server or on another device, then
@@ -15,7 +16,7 @@
     let { chatId, current, unseen = false }: Props = $props()
 
     const running = $derived(!!chatId && ($generationStates.has(chatGenKey(chatId)) || $remoteGenerations.has(chatId)))
-    const done = $derived(!running && !!chatId && $finishedReplies.has(chatId))
+    const outcome = $derived(!running && chatId ? $finishedReplies.get(chatId) : undefined)
 
     // Opening the chat clears its check.
     // svelte-ignore state_referenced_locally
@@ -33,7 +34,7 @@
     const SEEN_AFTER_MS = 2000
     let waitedForPage = false
     $effect(() => {
-        if (!current || !done) return
+        if (!current || !outcome) return
         if (unseen) {
             waitedForPage = true
             return
@@ -59,8 +60,10 @@
 
 {#if running}
     <span class="reply-spinner mr-1.5 shrink-0" role="status" title="응답 생성 중" aria-label="응답 생성 중"></span>
-{:else if done}
+{:else if outcome === 'done'}
     <span class="mr-1 shrink-0 text-sm leading-none" role="status" title="응답 도착" aria-label="응답 도착">✅</span>
+{:else if outcome === 'failed'}
+    <span class="mr-1 shrink-0 text-sm leading-none" role="status" title="응답 실패" aria-label="응답 실패">⚠️</span>
 {/if}
 
 <style>

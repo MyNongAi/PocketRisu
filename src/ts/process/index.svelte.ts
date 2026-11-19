@@ -10,6 +10,7 @@ import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
 import { alertError, notifyError } from "../alert";
+import { recordReplyOutcome } from '../gui/chatReplyStatus';
 import { parseChatML } from "../parser/chatML";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import { stripImageInstructionLines } from "./unifiedAssets";
@@ -241,6 +242,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     function throwError(error:string){
+        recordReplyOutcome(generationTarget?.chatId ?? currentChat?.id, 'failed')
         if(!DBState?.db?.inlayErrorResponse){
             alertError(error)
             return
@@ -395,6 +397,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     const storedModules = (moduleContext.modules ?? []).filter(isColdModule)
     if (storedModules.length > 0) {
         if (!await wakeModules(storedModules.map((module) => module.id))) {
+            recordReplyOutcome(realChatId, 'failed')
             alertError(language.moduleColdLoadFailed + storedModules.map((module) => module.name || module.id).join(', '))
             endGeneration(genKey, { generationId })
             return false
@@ -434,6 +437,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
     // Block send if chat is still a placeholder (hydration not complete)
     if (nowChatroom.chats[selectedChat]?._placeholder) {
+        recordReplyOutcome(realChatId, 'failed')
         alertError('Chat is still loading. Please wait a moment.')
         endGeneration(genKey, { generationId })
         if (realChatId) clearPendingSend(realChatId)

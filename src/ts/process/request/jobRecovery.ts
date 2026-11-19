@@ -7,6 +7,7 @@ import { addLog } from 'src/ts/log'
 import { recordRequestLog } from 'src/ts/requestLog'
 import { language } from 'src/lang'
 import { chatGenKey, endGeneration, generationStates, registerAbort, startGeneration } from 'src/ts/process/generationState'
+import { recordReplyOutcome } from 'src/ts/gui/chatReplyStatus'
 import { getGenerationModelString } from 'src/ts/process/models/modelString'
 import { clearStatus, endStatus, startStatus } from 'src/ts/status/requestStatus'
 import { authHeader, claimModelJob } from './jobFetch'
@@ -679,6 +680,7 @@ async function pollRunningJob(
         // Only release the guard if it is still OUR registration (a completed
         // recovery must not end a generation the user started afterwards).
         if (get(generationStates).get(genKey)?.generationId === registeredGenId) {
+            recordReplyOutcome(genKey, outcome)
             endGeneration(genKey)
         }
         if (statusId) {
@@ -735,6 +737,7 @@ async function pollRunningJob(
     // so the next boot's discovery slots the result in.
     console.warn('[ModelJobRecovery] poll deadline exceeded for job', job.id, '- giving up (next boot recovers)')
     if (get(generationStates).get(genKey)?.generationId === registeredGenId) {
+        recordReplyOutcome(genKey, 'aborted')
         endGeneration(genKey)
     }
     if (statusId) {

@@ -1,5 +1,5 @@
 import { derived, get, writable, type Readable } from "svelte/store"
-import { trackFinishedReplies } from 'src/ts/gui/chatReplyStatus'
+import { recordReplyOutcome, trackFinishedReplies } from 'src/ts/gui/chatReplyStatus'
 import {
     DEFAULT_GENERATION_CONCURRENCY_POLICY,
     evaluateGenerationAdmission,
@@ -333,6 +333,9 @@ export function abortGeneration(chatKey: string): boolean {
             aborted = true
         }
     }
-    if (aborted) userAbortedChatKeys.add(chatKey)
+    if (aborted) {
+        userAbortedChatKeys.add(chatKey)
+        recordReplyOutcome(chatKey, 'aborted')
+    }
     return aborted
 }

@@ -1,11 +1,11 @@
 import { get, writable } from 'svelte/store'
 import { describe, expect, it } from 'vitest'
-import { clearFinishedReply, finishedReplies, trackFinishedReplies } from './chatReplyStatus'
+import { clearFinishedReply, finishedReplies, lastReplyOutcome, recordReplyOutcome, trackFinishedReplies, type ReplyOutcome } from './chatReplyStatus'
 import { isSendKey } from './sendKey'
 
 describe('trackFinishedReplies', () => {
     it('marks a chat when its generation ends and unmarks it when another starts', () => {
-        finishedReplies.set(new Set())
+        finishedReplies.set(new Map())
         const running = writable(new Map<string, unknown>())
         const stop = trackFinishedReplies(running, ['nochat'])
 
@@ -13,7 +13,7 @@ describe('trackFinishedReplies', () => {
         expect([...get(finishedReplies)]).toEqual([])
 
         running.set(new Map())
-        expect([...get(finishedReplies)]).toEqual(['a'])
+        expect([...get(finishedReplies)]).toEqual([['a', 'done']])
 
         running.set(new Map([['a', {}]]))
         expect([...get(finishedReplies)]).toEqual([])
@@ -21,11 +21,37 @@ describe('trackFinishedReplies', () => {
     })
 
     it('clears a mark when the chat is opened', () => {
-        finishedReplies.set(new Set(['a', 'b']))
+        finishedReplies.set(new Map<string, ReplyOutcome>([['a', 'done'], ['b', 'failed']]))
         clearFinishedReply('a')
-        expect([...get(finishedReplies)]).toEqual(['b'])
+        expect([...get(finishedReplies)]).toEqual([['b', 'failed']])
         clearFinishedReply(undefined)
-        expect([...get(finishedReplies)]).toEqual(['b'])
+        expect([...get(finishedReplies)]).toEqual([['b', 'failed']])
+    })
+
+    it('marks a failed send, suppresses a stopped send, and replaces either on a later run', () => {
+        finishedReplies.set(new Map())
+        const running = writable(new Map<string, unknown>())
+        const stop = trackFinishedReplies(running)
+
+        running.set(new Map([['a', {}]]))
+        recordReplyOutcome('a', 'failed')
+        running.set(new Map())
+        expect(get(finishedReplies).get('a')).toBe('failed')
+        clearFinishedReply('a')
+        expect(lastReplyOutcome('a')).toBe('failed')
+
+        running.set(new Map([['a', {}]]))
+        expect(get(finishedReplies).has('a')).toBe(false)
+        expect(lastReplyOutcome('a')).toBeUndefined()
+        recordReplyOutcome('a', 'aborted')
+        recordReplyOutcome('a', 'failed') // a late error after Stop must not mark the chat
+        running.set(new Map())
+        expect(get(finishedReplies).has('a')).toBe(false)
+
+        running.set(new Map([['a', {}]]))
+        running.set(new Map())
+        expect(get(finishedReplies).get('a')).toBe('done')
+        stop()
     })
 })
 

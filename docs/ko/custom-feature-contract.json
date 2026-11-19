@@ -3640,7 +3640,7 @@
         "src/lib/Mobile/MobileCharacters.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/gui/characterRings.svelte.ts", "contains": "replied = $derived(charactersHoldingChats(this.#marks.current, DBState.db?.characters ?? []))" },
+        { "file": "src/ts/gui/characterRings.svelte.ts", "contains": "outcome === 'done'" },
         { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "<CharacterRingMark {chaId} {rounded} />" },
         { "file": "src/lib/SideBars/CharacterRingMark.svelte", "contains": ": chaId === view.character?.chaId ? 'current'" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const shownCharIndex = $derived(pane ? view.characterIndex : $selectedCharID)" },
@@ -3683,6 +3683,28 @@
       ],
       "regressionTests": [
         "src/ts/gui/chatReplyStatus.test.ts"
+      ]
+    },
+    {
+      "id": "REPLY-STATUS-OUTCOME",
+      "title": "채팅 목록 응답 완료와 실패 구분",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/chatReplyStatus.ts",
+        "src/lib/SideBars/ChatReplyStatus.svelte",
+        "src/ts/process/index.svelte.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/sync/remoteActivity.ts",
+        "src/ts/gui/characterRings.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/chatReplyStatus.ts", "contains": "REPLY-STATUS-OUTCOME: the chat list's mark tells a failed reply from a finished one." },
+        { "file": "src/lib/SideBars/ChatReplyStatus.svelte", "contains": "REPLY-STATUS-OUTCOME: the chat list's mark tells a failed reply from a finished one." }
+      ],
+      "regressionTests": [
+        "src/ts/gui/chatReplyStatus.test.ts",
+        "src/ts/sync/remoteActivity.test.ts",
+        "src/ts/gui/characterRings.svelte.test.ts"
       ]
     },
     {

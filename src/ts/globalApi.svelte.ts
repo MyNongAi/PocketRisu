@@ -10,6 +10,7 @@ import { setDatabase, normalizeDatabase, type Database, type Chat, type Message,
 import { applyMergedDbInPlace } from "./storage/applyRebasedDb";
 import { mergeChatMessages, messageBase } from "./storage/chatMerge";
 import { receivePresence, startPresencePublisher, type PresenceEvent as RemotePresenceEvent } from "./sync/remoteActivity";
+import { lastReplyOutcome } from './gui/chatReplyStatus';
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { recordDbTransferSize } from "./transferSize";
@@ -2651,6 +2652,7 @@ export async function saveDb() {
                     return last?.role === 'char' ? String(last.data ?? '').length : 0
                 },
                 aborted: (chatId) => wasGenerationAborted(chatGenKey(chatId)),
+                outcome: (chatId) => lastReplyOutcome(chatId),
             }, {
                 statusCards: () => getDatabase()?.showRequestStatus !== false,
             })

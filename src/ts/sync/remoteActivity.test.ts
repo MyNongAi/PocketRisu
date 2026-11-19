@@ -29,7 +29,18 @@ describe('a reply another device is writing', () => {
         receivePresence({ kind: 'generation', origin: 'phone', chatId: 'x', state: 'end', outcome: 'done' }, 3000)
         expect(get(remoteGenerations).has('x')).toBe(false)
         expect(get(requestStatuses).get('remote:x')?.phase).toBe('done')
-        expect(get(finishedReplies).has('x')).toBe(true)
+        expect(get(finishedReplies).get('x')).toBe('done')
+    })
+
+    it('marks failure, clears it on a new run, and leaves no mark after a stop', () => {
+        receivePresence({ kind: 'generation', chatId: 'x', state: 'progress' })
+        receivePresence({ kind: 'generation', chatId: 'x', state: 'end', outcome: 'failed' })
+        expect(get(finishedReplies).get('x')).toBe('failed')
+
+        receivePresence({ kind: 'generation', chatId: 'x', state: 'progress' })
+        expect(get(finishedReplies).has('x')).toBe(false)
+        receivePresence({ kind: 'generation', chatId: 'x', state: 'end', outcome: 'aborted' })
+        expect(get(finishedReplies).has('x')).toBe(false)
     })
 
     it('stops showing when the device goes quiet', () => {
@@ -102,6 +113,24 @@ describe('telling other devices', () => {
         running.set(new Map())
         await vi.advanceTimersByTimeAsync(PRESENCE_END_GRACE_MS)
         expect(sent.at(-1)).toEqual({ kind: 'generation', chatId: 'x', state: 'end', outcome: 'done' })
+        stop()
+    })
+
+    it('publishes the whole send failure even when the main request card succeeded', async () => {
+        const sent: any[] = []
+        const running = writable(new Map<string, { startedAt: number }>())
+        const stop = startPresencePublisher(async (body) => { sent.push(body) }, {
+            running,
+            statuses: requestStatuses,
+            outcome: () => 'failed',
+        })
+        running.set(new Map([['x', { startedAt: Date.now() }]]))
+        startStatus('g2', { kind: 'main', label: 'Model', chatId: 'x', now: Date.now() })
+        await vi.advanceTimersByTimeAsync(PRESENCE_SEND_MS)
+        endStatus('g2', 'done', { now: Date.now() })
+        running.set(new Map())
+        await vi.advanceTimersByTimeAsync(PRESENCE_END_GRACE_MS)
+        expect(sent.at(-1)).toEqual({ kind: 'generation', chatId: 'x', state: 'end', outcome: 'failed' })
         stop()
     })
 

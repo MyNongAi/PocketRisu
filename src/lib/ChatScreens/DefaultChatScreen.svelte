@@ -27,6 +27,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from "../../ts/characters";
     import { sendChat } from "../../ts/process/index.svelte";
+    import { recordReplyOutcome } from 'src/ts/gui/chatReplyStatus';
     import { auxiliaryGenerating, chatGenKey, endGeneration, generationStates, getGenerationAdmission, registerAbort, stopGeneration } from "../../ts/process/generationState";
     import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from '../../ts/process/generationTarget';
     import { captureChatModelRoute, type RequestModelRouteSnapshot } from '../../ts/process/request/modelPresetBinding';
@@ -1260,7 +1261,10 @@ import { isMobile } from 'src/ts/platform'
             // Stop rejects a request still waiting with an AbortError ("signal
             // is aborted without reason"), shown as an unknown error (the
             // user's report, 2026-10-26). It is the user's own stop.
-            if (!abortController.signal.aborted) alertError(error)
+            if (!abortController.signal.aborted) {
+                recordReplyOutcome(genKey, 'failed')
+                alertError(error)
+            }
         }
         // Owner-scoped: after a forced release (stopGeneration) this send may
         // conclude long after a newer send took the chat; leave that one alone.
@@ -1319,6 +1323,7 @@ import { isMobile } from 'src/ts/platform'
             await sendChat(-1, { signal: abortController.signal, generationTarget })
         } catch (error) {
             console.error(error)
+            if (!abortController.signal.aborted) recordReplyOutcome(chatId, 'failed')
         } finally {
             await finishChatLease(chatLease)
         }

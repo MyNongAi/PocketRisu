@@ -74,7 +74,7 @@ function finishRemote(chatId: string, outcome: 'done' | 'failed' | 'aborted', no
         return next
     })
     endStatus(remoteStatusId(chatId), outcome, { now })
-    if (outcome === 'done') markFinishedReply(chatId)
+    if (outcome !== 'aborted') markFinishedReply(chatId, outcome)
 }
 
 function progressRemote(event: PresenceEvent, chatId: string, now: number): void {
@@ -151,6 +151,8 @@ export interface PresenceSources {
     replyChars?: (chatId: string) => number
     /** The reply was stopped by the user. */
     aborted?: (chatId: string) => boolean
+    /** Result of the whole send, including failures in auxiliary requests. */
+    outcome?: (chatId: string) => 'done' | 'failed' | 'aborted' | undefined
 }
 
 /** The main request card of each chat this page writes a reply for. */
@@ -231,7 +233,7 @@ export function startPresencePublisher(send: PresencePost, sources: PresenceSour
         timers.delete(chatId)
         lastSent.delete(chatId)
         const card = cards.get(chatId)
-        const outcome = sources.aborted?.(chatId) ? 'aborted' : card && isTerminalPhase(card.phase) ? card.phase : 'done'
+        const outcome = sources.aborted?.(chatId) ? 'aborted' : sources.outcome?.(chatId) ?? (card && isTerminalPhase(card.phase) ? card.phase : 'done')
         deliver({ kind: 'generation', chatId, state: 'end', outcome })
     }
     const refresh = () => {

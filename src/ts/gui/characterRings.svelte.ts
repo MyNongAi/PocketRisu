@@ -30,7 +30,7 @@ class CharacterRings {
     #marks = fromStore(finishedReplies)
     #selected = fromStore(selectedCharID)
     current = $derived(this.#selected.current >= 0 ? DBState.db?.characters?.[this.#selected.current]?.chaId ?? null : null)
-    replied = $derived(charactersHoldingChats(this.#marks.current, DBState.db?.characters ?? []))
+    replied = $derived(charactersHoldingChats(new Set([...this.#marks.current].filter(([, outcome]) => outcome === 'done').map(([chatId]) => chatId)), DBState.db?.characters ?? []))
 
     of(chaId: string | undefined): CharacterRing | null {
         if (!chaId) return null

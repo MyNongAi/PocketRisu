@@ -9,6 +9,7 @@ vi.mock('../stores.svelte', async () => {
 })
 
 const { finishedReplies, clearFinishedReply } = await import('./chatReplyStatus')
+type ReplyOutcome = import('./chatReplyStatus').ReplyOutcome
 const { charactersHoldingChats, characterRings } = await import('./characterRings.svelte')
 
 describe('the bot list borders', () => {
@@ -29,7 +30,7 @@ describe('the bot list borders', () => {
             { chaId: 'b', chats: [{ id: 'b1' }, { id: 'b2' }] },
         ] })
         state.db = db
-        finishedReplies.set(new Set())
+        finishedReplies.set(new Map())
         const seen: Record<string, string | null> = {}
         const stop = $effect.root(() => {
             $effect(() => {
@@ -41,7 +42,7 @@ describe('the bot list borders', () => {
         expect(seen).toEqual({ a: null, b: null })
 
         state.selected.set(0)
-        finishedReplies.set(new Set(['b2']))
+        finishedReplies.set(new Map<string, ReplyOutcome>([['b2', 'done']]))
         flushSync()
         expect(seen).toEqual({ a: 'current', b: 'replied' })
 
@@ -56,12 +57,16 @@ describe('the bot list borders', () => {
         expect(seen).toEqual({ a: 'current', b: null })
 
         // A chat made after its reply was marked (another device) still counts.
-        finishedReplies.set(new Set(['b3']))
+        finishedReplies.set(new Map<string, ReplyOutcome>([['b3', 'done']]))
         flushSync()
         expect(seen.b).toBeNull()
         db.characters[1].chats.push({ id: 'b3' })
         flushSync()
         expect(seen.b).toBe('replied')
+
+        finishedReplies.set(new Map<string, ReplyOutcome>([['b3', 'failed']]))
+        flushSync()
+        expect(seen.b).toBeNull()
 
         expect(characterRings.of(undefined)).toBeNull()
         stop()
