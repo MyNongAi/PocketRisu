@@ -58,9 +58,9 @@ describe('model picker', () => {
         expect(target.querySelector('.rounded-md.border')).toBeNull()
     })
 
-    it('shows built-in, plugin and model preset tabs side by side', async () => {
+    it('shows model preset, built-in and plugin tabs side by side, presets first like the binding picker', async () => {
         await open('gemini-2.5-pro')
-        expect(tabLabels()).toEqual(['Built-in', 'Plugin', 'Model presets'])
+        expect(tabLabels()).toEqual(['Model presets', 'Built-in', 'Plugin'])
     })
 
     it('picking a preset stores it like any other model', async () => {

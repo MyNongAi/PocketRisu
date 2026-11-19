@@ -108,12 +108,13 @@
 {#snippet listBody()}
     {#if showTabs}
         <div class="shrink-0 flex w-full rounded-md border border-selected mb-2">
+            <!-- Model presets first, as in the binding slot picker (ModelPresetList; the user's report, 2026-11-20). -->
+            {#if hasPresets}
+                <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelTabPreset}</button>
+            {/if}
             <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'base'} onclick={() => { activeTab = 'base' }}>{language.modelTabBuiltin}</button>
             {#if hasPlugins}
                 <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'plugin'} onclick={() => { activeTab = 'plugin' }}>{language.modelTabPlugin}</button>
-            {/if}
-            {#if hasPresets}
-                <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelTabPreset}</button>
             {/if}
         </div>
     {:else}
