@@ -1,22 +1,15 @@
 'use strict';
 
-// Stale-build write fence. The server is rebuilt in place (git pull, then a
-// vite build into dist/ with emptyOutDir off), and a phone or PC tab left open
-// on the previous build keeps saving with the old client code. Every build
-// writes its id to dist/build-id.txt and compiles the same id into the client
-// (vite.config.ts), which sends it on its storage requests as
-// x-pocketrisu-build (src/ts/storage/buildFence.ts). A mutating request whose
-// id differs from the dist this server serves is refused with 426 before any
-// body parsing or route runs, so nothing of it is applied; the client then
-// reloads, or stops saving and keeps its unsaved work on screen.
-//
-// Fails open: a request without the header (older clients, plugins, tools,
-// tests, the vite dev server) or a server without a readable build id is
-// handled as before.
+// BUILD-FENCE-LATEST-WINS: an older tab keeps saving; only a storage-format break stops it.
+// Build ids identify old tabs for one-time logging. The storage epoch fences
+// incompatible writes before body parsing. Missing epoch means epoch 1 for
+// clients already deployed before this header existed.
 
 const fs = require('fs');
 
 const BUILD_ID_HEADER = 'x-pocketrisu-build';
+const STORAGE_EPOCH_HEADER = 'x-pocketrisu-storage-epoch';
+const STORAGE_FORMAT_EPOCH = 1;
 const BUILD_ID_FILE_NAME = 'build-id.txt';
 const STALE_BUILD_STATUS = 426;
 const STALE_BUILD_CODE = 'STALE_CLIENT_BUILD';
@@ -68,16 +61,12 @@ function isMutatingRequest(method, requestPath) {
 }
 
 /**
- * The server build id a request must be refused for, or null to let it
- * through: only a mutating request that carries a build id different from a
- * known server build is refused.
+ * The server storage epoch for an incompatible mutating request, or null.
  */
-function staleBuildFor({ method, path: requestPath, clientBuild, serverBuild }) {
-    if (typeof clientBuild !== 'string' || clientBuild === '') return null;
-    if (!serverBuild) return null;
-    if (clientBuild === serverBuild) return null;
+function staleBuildFor({ method, path: requestPath, clientEpoch }) {
     if (!isMutatingRequest(method, requestPath)) return null;
-    return serverBuild;
+    if (clientEpoch === undefined) return null;
+    return String(clientEpoch) === String(STORAGE_FORMAT_EPOCH) ? null : STORAGE_FORMAT_EPOCH;
 }
 
 /**
@@ -110,28 +99,28 @@ function createBuildIdReader({ file, fsImpl = fs } = {}) {
 }
 
 function createBuildFence({ readBuildId, logger = console } = {}) {
-    // One log line per refused client build, not per request.
+    // One log line per mismatched client build, not per request.
     const reported = new Set();
     function middleware(req, res, next) {
         const clientBuild = req.headers?.[BUILD_ID_HEADER];
-        // Cheap exits first: requests without the header never stat the file.
-        if (typeof clientBuild !== 'string' || clientBuild === '') return next();
         if (!isMutatingRequest(req.method, req.path)) return next();
-        const serverBuild = staleBuildFor({
+        const serverEpoch = staleBuildFor({
             method: req.method,
             path: req.path,
-            clientBuild,
-            serverBuild: readBuildId(),
+            clientEpoch: req.headers?.[STORAGE_EPOCH_HEADER],
         });
-        if (!serverBuild) return next();
-        if (!reported.has(clientBuild) && reported.size < 64) {
-            reported.add(clientBuild);
-            logger.warn?.(`[BuildFence] refused ${req.method} ${req.path} from client build ${clientBuild.slice(0, 128)}; serving ${serverBuild}`);
+        const safeClientBuild = parseBuildId(clientBuild);
+        const serverBuild = safeClientBuild ? readBuildId() : null;
+        if (serverBuild && safeClientBuild !== serverBuild && !reported.has(safeClientBuild) && reported.size < 64) {
+            reported.add(safeClientBuild);
+            logger.warn?.(`[BuildFence] client build ${safeClientBuild} differs from served build ${serverBuild}; writes remain enabled when storage epochs match`);
         }
+        if (serverEpoch === null) return next();
         res.status(STALE_BUILD_STATUS).json({
-            error: 'This page runs an older PocketRisu build than the server. Reload it to continue; nothing from this request was saved.',
+            error: 'This page uses a different storage format. Nothing from this request was saved.',
             code: STALE_BUILD_CODE,
             serverBuild,
+            serverEpoch,
         });
     }
     return middleware;
@@ -139,6 +128,8 @@ function createBuildFence({ readBuildId, logger = console } = {}) {
 
 module.exports = {
     BUILD_ID_HEADER,
+    STORAGE_EPOCH_HEADER,
+    STORAGE_FORMAT_EPOCH,
     BUILD_ID_FILE_NAME,
     STALE_BUILD_STATUS,
     STALE_BUILD_CODE,

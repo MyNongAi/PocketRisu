@@ -9,7 +9,7 @@ vi.mock('./buildFence', async (importOriginal) => ({
 }))
 
 const { NodeStorage, StorageRequestError } = await import('./nodeStorage')
-const { BUILD_ID_HEADER, StaleBuildError, reportStaleBuild, setClientBuildIdForTests } = await import('./buildFence')
+const { BUILD_ID_HEADER, STORAGE_EPOCH_HEADER, StaleBuildError, reportStaleBuild, setClientBuildIdForTests } = await import('./buildFence')
 
 function jsonResponse(status: number, body: any = {}) {
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -51,6 +51,8 @@ describe('NodeStorage build fence', () => {
         await storage.keys('drafts/')
         expect(sentHeaders(fetchMock, 0).get(BUILD_ID_HEADER)).toBe('old-build')
         expect(sentHeaders(fetchMock, 1).get(BUILD_ID_HEADER)).toBe('old-build')
+        expect(sentHeaders(fetchMock, 0).get(STORAGE_EPOCH_HEADER)).toBe('1')
+        expect(sentHeaders(fetchMock, 1).get(STORAGE_EPOCH_HEADER)).toBe('1')
     })
 
     test('a dev build sends no build id', async () => {
@@ -59,6 +61,7 @@ describe('NodeStorage build fence', () => {
         const storage = setUpStorage(fetchMock)
         await storage.setItem('database/database.bin', new Uint8Array([1]))
         expect(sentHeaders(fetchMock).has(BUILD_ID_HEADER)).toBe(false)
+        expect(sentHeaders(fetchMock).has(STORAGE_EPOCH_HEADER)).toBe(false)
     })
 
     test('a refused patch throws instead of falling back, and is reported once', async () => {

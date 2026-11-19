@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const require = createRequire(import.meta.url)
 const {
     BUILD_ID_HEADER,
+    STORAGE_EPOCH_HEADER,
+    STORAGE_FORMAT_EPOCH,
     STALE_BUILD_CODE,
     parseBuildId,
     isMutatingRequest,
@@ -41,8 +43,10 @@ describe('build fence decision', () => {
         expect(staleBuildFor({ ...write, clientBuild: 'b2', serverBuild: 'b2' })).toBeNull()
     })
 
-    it('refuses a different build with the server build id', () => {
-        expect(staleBuildFor({ ...write, clientBuild: 'b1', serverBuild: 'b2' })).toBe('b2')
+    it('accepts another build at the same or missing epoch', () => {
+        expect(staleBuildFor({ ...write, clientBuild: 'b1', serverBuild: 'b2' })).toBeNull()
+        expect(staleBuildFor({ ...write, clientEpoch: '1' })).toBeNull()
+        expect(staleBuildFor({ ...write, clientEpoch: '2' })).toBe(STORAGE_FORMAT_EPOCH)
     })
 
     it('fails open while the server build id is unknown', () => {
@@ -143,9 +147,9 @@ describe('build fence middleware over HTTP', () => {
             const s = app.listen(0, '127.0.0.1', () => resolve(s))
         })
         const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-        const patch = (build?: string) => fetch(`${base}/api/patch`, {
+        const patch = (build?: string, epoch?: string) => fetch(`${base}/api/patch`, {
             method: 'POST',
-            headers: { 'content-type': 'application/json', ...(build ? { [BUILD_ID_HEADER]: build } : {}) },
+            headers: { 'content-type': 'application/json', ...(build ? { [BUILD_ID_HEADER]: build } : {}), ...(epoch ? { [STORAGE_EPOCH_HEADER]: epoch } : {}) },
             body: JSON.stringify({ patch: [] }),
         })
         return {
@@ -157,21 +161,23 @@ describe('build fence middleware over HTTP', () => {
         }
     }
 
-    it('refuses a stale write before its body is parsed', async () => {
+    it('accepts old builds and refuses only an incompatible epoch before parsing', async () => {
         fs.writeFileSync(file, 'b2\n')
         const s = await serve()
         try {
-            const stale = await s.patch('b1')
+            expect((await s.patch('b1')).status).toBe(200)
+            expect((await s.patch('b1', '1')).status).toBe(200)
+            const stale = await s.patch('b1', '2')
             expect(stale.status).toBe(426)
-            expect(await stale.json()).toMatchObject({ code: STALE_BUILD_CODE, serverBuild: 'b2' })
-            expect(s.counts()).toEqual({ parsedBodies: 0, writes: 0 })
-            // A second refusal from the same client build is not logged again.
-            await s.patch('b1')
+            expect(await stale.json()).toMatchObject({ code: STALE_BUILD_CODE, serverBuild: 'b2', serverEpoch: 1 })
+            expect(s.counts()).toEqual({ parsedBodies: 2, writes: 2 })
+            // One mismatch line per build, even across accepted and refused writes.
+            await s.patch('b1', '2')
             expect(s.logger.warn).toHaveBeenCalledTimes(1)
 
             expect((await s.patch('b2')).status).toBe(200)
             expect((await s.patch()).status).toBe(200)
-            expect(s.counts()).toEqual({ parsedBodies: 2, writes: 2 })
+            expect(s.counts()).toEqual({ parsedBodies: 4, writes: 4 })
 
             const read = await fetch(`${s.base}/api/read`, { headers: { [BUILD_ID_HEADER]: 'b1' } })
             expect(read.status).toBe(200)
@@ -180,13 +186,13 @@ describe('build fence middleware over HTTP', () => {
         }
     })
 
-    it('fails open without a build id file and follows a rebuild', async () => {
+    it('continues accepting old builds across a rebuild', async () => {
         const s = await serve()
         try {
             expect((await s.patch('b1')).status).toBe(200)
             // Sizes differ, so the rewrite is seen even within one mtime tick.
             fs.writeFileSync(file, 'b22\n')
-            expect((await s.patch('b1')).status).toBe(426)
+            expect((await s.patch('b1')).status).toBe(200)
             fs.writeFileSync(file, 'b1\n')
             expect((await s.patch('b1')).status).toBe(200)
         } finally {

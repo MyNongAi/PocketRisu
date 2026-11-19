@@ -1,9 +1,7 @@
 /**
  * The stale-build write fence as server.cjs mounts it (build-fence.cjs). With
- * dist/build-id.txt present, a write carrying another build's id is refused
- * with 426 and changes nothing, while the same write with the served id or
- * without the header is applied. Reads stay open, and a rebuild under the
- * running server is picked up without a restart.
+ * dist/build-id.txt present, older builds keep writing. Only a different
+ * storage epoch is refused before the write is applied.
  */
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -16,6 +14,7 @@ const utils = require('../../server/node/utils.cjs') as typeof import('../../ser
 
 const DB_KEY_HEX = Buffer.from('database/database.bin').toString('hex')
 const BUILD_HEADER = 'x-pocketrisu-build'
+const EPOCH_HEADER = 'x-pocketrisu-storage-epoch'
 
 let srv: ServerHandle
 let client: RisuClient
@@ -45,7 +44,7 @@ async function readDb(build?: string) {
   return { db, hash: utils.calculateHash(db).toString(16) }
 }
 
-async function patchNote(note: string, build?: string) {
+async function patchNote(note: string, build?: string, epoch?: string) {
   const { hash } = await readDb()
   return client.fetch('/api/patch', {
     method: 'POST',
@@ -53,6 +52,7 @@ async function patchNote(note: string, build?: string) {
       'content-type': 'application/json',
       'file-path': DB_KEY_HEX,
       ...(build ? { [BUILD_HEADER]: build } : {}),
+      ...(epoch ? { [EPOCH_HEADER]: epoch } : {}),
     },
     body: JSON.stringify({ patch: [{ op: 'add', path: '/globalNote', value: note }], expectedHash: hash }),
   })
@@ -63,15 +63,18 @@ describe('stale-build write fence', () => {
     expect(srv.stdout()).toContain('[BuildFence] serving client build build-a')
   })
 
-  test('a write from another build is refused and changes nothing', async () => {
+  test('a write from another build is accepted, but a different epoch changes nothing', async () => {
+    expect((await patchNote('from the old tab', 'build-old')).status).toBe(200)
+    expect((await readDb()).db.globalNote).toBe('from the old tab')
+    expect((await patchNote('same epoch', 'build-old', '1')).status).toBe(200)
     const before = (await readDb()).db.globalNote
-    const refused = await patchNote('from the old tab', 'build-old')
+    const refused = await patchNote('different epoch', 'build-old', '2')
     expect(refused.status).toBe(426)
-    expect(await refused.json()).toMatchObject({ code: 'STALE_CLIENT_BUILD', serverBuild: 'build-a' })
+    expect(await refused.json()).toMatchObject({ code: 'STALE_CLIENT_BUILD', serverBuild: 'build-a', serverEpoch: 1 })
     expect((await readDb()).db.globalNote).toBe(before)
 
     const remove = await client.fetch('/api/remove', {
-      headers: { 'file-path': DB_KEY_HEX, [BUILD_HEADER]: 'build-old' },
+      headers: { 'file-path': DB_KEY_HEX, [BUILD_HEADER]: 'build-old', [EPOCH_HEADER]: '2' },
     })
     expect(remove.status).toBe(426)
   })
@@ -83,11 +86,9 @@ describe('stale-build write fence', () => {
     expect((await readDb()).db.globalNote).toBe('no header')
   })
 
-  test('a rebuild under the running server moves the fence', async () => {
+  test('a rebuild under the running server still accepts old tabs', async () => {
     await writeFile(buildIdFile, 'build-bb\n')
-    const refused = await patchNote('previous build', 'build-a')
-    expect(refused.status).toBe(426)
-    expect(await refused.json()).toMatchObject({ serverBuild: 'build-bb' })
+    expect((await patchNote('previous build', 'build-a')).status).toBe(200)
     expect((await patchNote('rebuilt', 'build-bb')).status).toBe(200)
   })
 })

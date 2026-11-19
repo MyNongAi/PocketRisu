@@ -1,7 +1,7 @@
 <script lang="ts">
     // Stale-build notice. Mounted globally in App.svelte and driven by
     // `staleBuildNotice` (src/ts/storage/buildFence.ts): the server serves a
-    // newer client build, saving in this tab has already stopped, and the tab
+    // incompatible storage epoch, saving in this tab has already stopped, and the tab
     // held unsaved work, so it was not reloaded. The notice keeps that work
     // visible until the user reloads. It cannot be closed, only folded into a
     // bottom banner so the chat behind it can still be read and copied from;
@@ -9,14 +9,17 @@
     import { language } from "src/lang";
     import ShDialog from "src/lib/UI/GUI/ShDialog.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
-    import { TriangleAlertIcon } from "@lucide/svelte";
+    import { TriangleAlertIcon, XIcon } from "@lucide/svelte";
     import { notifyError } from "src/ts/alert";
-    import { downloadUnsavedEdits, reloadIntoNewBuild, staleBuildNotice } from "src/ts/storage/buildFence";
+    import { downloadUnsavedEdits, newBuildNotice, reloadIntoNewBuild, staleBuildNotice } from "src/ts/storage/buildFence";
 
     const notice = $derived($staleBuildNotice);
     let foldedSeq = $state(-1);
     let copiedSeq = $state(-1);
     let textArea: HTMLTextAreaElement | undefined = $state();
+    // The new-build banner sits over the top navigation; "×" hides it. The
+    // tab keeps saving and still reloads by itself once nothing is unsaved.
+    let newBuildDismissed = $state(false);
 
     const folded = $derived(!!notice && foldedSeq === notice.seq);
     const copied = $derived(!!notice && copiedSeq === notice.seq);
@@ -44,7 +47,13 @@
     }
 </script>
 
-{#if notice && folded}
+{#if $newBuildNotice && !notice && !newBuildDismissed}
+    <div class="fixed inset-x-2 top-2 z-[60] flex items-center gap-2 rounded-md border border-darkborderc bg-darkbg px-3 py-2 text-sm text-textcolor shadow-lg sm:inset-x-auto sm:right-3 sm:max-w-sm" role="status">
+        <span class="min-w-0 flex-1 leading-relaxed">{language.newBuildAvailable}</span>
+        <ShButton size="sm" variant="outline" className="shrink-0" onclick={() => reloadIntoNewBuild()}>{language.staleBuildReload}</ShButton>
+        <button type="button" class="shrink-0 rounded p-1 text-textcolor2 hover:text-textcolor" aria-label={language.close} title={language.close} onclick={() => { newBuildDismissed = true; }}><XIcon size={16} /></button>
+    </div>
+{:else if notice && folded}
     <!-- At the bottom: it covers only the chat input, which cannot save here
          anyway, and leaves the navigation at the top usable. -->
     <div

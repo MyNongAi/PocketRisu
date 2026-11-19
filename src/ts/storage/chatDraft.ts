@@ -57,8 +57,7 @@ const maybeSaved = new Set<string>()
 // a failed draft write must never disrupt chatting.
 let writeChain: Promise<void> = Promise.resolve()
 function enqueue(op: () => Promise<void>): void {
-    // A tab on an outdated build no longer writes (buildFence.ts); its text
-    // stays in the input and on the stale-build notice instead.
+    // Only an incompatible storage epoch stops draft writes.
     writeChain = writeChain.then(() => isStaleBuild() ? undefined : op().catch(() => {}))
 }
 

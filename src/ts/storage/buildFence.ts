@@ -1,26 +1,14 @@
-// Stale-build write fence, client half (server half: server/node/build-fence.cjs).
-//
-// The server is rebuilt in place, and a tab left open on the previous build
-// keeps running its old code. Every production build compiles an id into the
-// client (vite.config.ts) and writes the same id to dist/build-id.txt. Storage
-// requests carry the id (NodeStorage.authFetchOnce), and the server refuses a
-// write from another build with 426 before applying any of it.
-//
-// A refused tab stops saving at once (onStaleBuild). With nothing unsaved it
-// reloads into the new build; otherwise it stays open behind the stale-build
-// notice (StaleBuildNotice.svelte), which shows the unsent chat input and
-// offers the unsaved edits for download before the user reloads. A tab that
-// already reloaded once for a server build and still runs old code (a cached
-// page) does not reload again: it shows the notice instead of looping.
-//
-// Tabs also compare their id with dist/build-id.txt when they return to the
-// screen, so an idle tab reloads before the user starts typing into it.
+// BUILD-FENCE-LATEST-WINS: an older tab keeps saving; only a storage-format break stops it.
+// Build mismatches keep saving and reload after work finishes. An epoch
+// refusal alone stops the save loop and preserves unsaved work for export.
 
 import { writable } from 'svelte/store'
 import { language } from 'src/lang'
 import { allowNextUnload } from '../../preload'
 
 export const BUILD_ID_HEADER = 'x-pocketrisu-build'
+export const STORAGE_EPOCH_HEADER = 'x-pocketrisu-storage-epoch'
+export const STORAGE_FORMAT_EPOCH = 1
 export const STALE_BUILD_STATUS = 426
 export const STALE_BUILD_CODE = 'STALE_CLIENT_BUILD'
 const BUILD_ID_URL = '/build-id.txt'
@@ -59,14 +47,20 @@ export function parseBuildId(text: unknown): string | null {
 }
 
 export function addBuildIdHeader(headers: Headers): void {
-    if (clientBuildId) headers.set(BUILD_ID_HEADER, clientBuildId)
+    if (clientBuildId) {
+        headers.set(BUILD_ID_HEADER, clientBuildId)
+        headers.set(STORAGE_EPOCH_HEADER, String(STORAGE_FORMAT_EPOCH))
+    }
 }
 
 export function setXhrBuildIdHeader(xhr: XMLHttpRequest): void {
-    if (clientBuildId) xhr.setRequestHeader(BUILD_ID_HEADER, clientBuildId)
+    if (clientBuildId) {
+        xhr.setRequestHeader(BUILD_ID_HEADER, clientBuildId)
+        xhr.setRequestHeader(STORAGE_EPOCH_HEADER, String(STORAGE_FORMAT_EPOCH))
+    }
 }
 
-/** A storage request the server refused, unapplied, because this tab runs an older build. */
+/** A storage request the server refused, unapplied, for an incompatible epoch. */
 export class StaleBuildError extends Error {
     readonly status = STALE_BUILD_STATUS
     constructor(readonly serverBuildId: string) {
@@ -78,9 +72,9 @@ export class StaleBuildError extends Error {
 
 /** The server build id named by a stale-build refusal body, or null. */
 export function parseStaleBuildBody(body: unknown): string | null {
-    const data = body as { code?: unknown, serverBuild?: unknown } | null
+    const data = body as { code?: unknown, serverBuild?: unknown, serverEpoch?: unknown } | null
     if (data?.code !== STALE_BUILD_CODE) return null
-    return parseBuildId(data.serverBuild)
+    return parseBuildId(data.serverBuild) ?? (data.serverEpoch === STORAGE_FORMAT_EPOCH ? (clientBuildId || 'unknown') : null)
 }
 
 /** The server build id when this response is a stale-build refusal, else null. */
@@ -145,6 +139,42 @@ const textSources = new Set<() => string>()
 const stopListeners = new Set<() => void>()
 let staleFor: string | null = null
 let reloading = false
+let pendingBuild: string | null = null
+let pendingDeps: StaleBuildDeps | null = null
+let pendingTimer: ReturnType<typeof setInterval> | null = null
+export const newBuildNotice = writable(false)
+
+/** Retry the automatic reload after a save or generation finishes. */
+export function checkPendingBuildReload(): StaleBuildAction | null {
+    if (!pendingBuild || !pendingDeps || reloading || staleFor !== null) return null
+    const serverBuildId = pendingBuild
+    const deps = pendingDeps
+    let busy = true
+    try { busy = (saveState?.hasUnsavedWork() ?? true) || collectUnsavedText().length > 0 } catch { /* keep saving */ }
+    let action = decideStaleBuildAction({ unsavedWork: busy, serverBuildId, reloadedFor: readReloadMark(deps.storage) })
+    if (action === 'reload' && !writeReloadMark(deps.storage, serverBuildId)) action = 'notice'
+    if (action === 'reload') {
+        reloading = true
+        newBuildNotice.set(false)
+        if (pendingTimer) clearInterval(pendingTimer)
+        pendingTimer = null
+        allowNextUnload()
+        deps.reload()
+    } else {
+        newBuildNotice.set(true)
+    }
+    return action
+}
+
+/** A different code build remains write-compatible. */
+export function reportNewBuild(serverBuildId: string, deps: StaleBuildDeps = browserDeps()): StaleBuildAction {
+    if (reloading) return 'reload'
+    pendingBuild = serverBuildId
+    pendingDeps = deps
+    const action = checkPendingBuildReload() ?? 'notice'
+    if (action === 'notice' && !pendingTimer) pendingTimer = setInterval(checkPendingBuildReload, 1000)
+    return action
+}
 
 /** The save loop's view of unsaved work (globalApi saveDb). */
 export function setStaleBuildSaveState(state: StaleBuildSaveState | null): void {
@@ -212,10 +242,12 @@ function writeReloadMark(storage: MarkStorage | null, serverBuildId: string): bo
 }
 
 /**
- * The server serves another build than this tab runs. Stops saving, then
- * reloads or shows the stale-build notice (decideStaleBuildAction).
+ * An incompatible storage epoch was refused. Stop saving and preserve edits.
  */
 export function reportStaleBuild(serverBuildId: string, deps: StaleBuildDeps = browserDeps()): StaleBuildAction {
+    if (pendingTimer) clearInterval(pendingTimer)
+    pendingTimer = null
+    newBuildNotice.set(false)
     const first = staleFor === null
     staleFor = serverBuildId
     if (first) {
@@ -251,7 +283,7 @@ export function reportStaleBuild(serverBuildId: string, deps: StaleBuildDeps = b
         deps.reload()
         return 'reload'
     }
-    console.warn(`[BuildFence] the server now serves build ${serverBuildId} (this page: ${clientBuildId}); saving stopped, unsaved work kept on screen`)
+    console.warn(`[BuildFence] storage epoch mismatch; saving stopped, unsaved work kept on screen`)
     staleBuildNotice.update((previous) => ({
         serverBuildId,
         reloadTried: reloadedFor === serverBuildId,
@@ -281,7 +313,7 @@ export async function checkServerBuild(
     deps: StaleBuildDeps = browserDeps(),
 ): Promise<'match' | 'stale' | 'unknown'> {
     if (!clientBuildId) return 'unknown'
-    // Already handled; a re-check must not reopen a collapsed notice.
+    // An epoch refusal already stopped this tab.
     if (staleFor !== null) return 'stale'
     let serverBuildId: string | null = null
     try {
@@ -295,7 +327,7 @@ export async function checkServerBuild(
         try { deps.storage?.removeItem(RELOAD_MARK_KEY) } catch { /* best-effort */ }
         return 'match'
     }
-    reportStaleBuild(serverBuildId, deps)
+    reportNewBuild(serverBuildId, deps)
     return 'stale'
 }
 
@@ -327,5 +359,10 @@ export function resetBuildFenceForTests(): void {
     staleFor = null
     reloading = false
     watching = false
+    pendingBuild = null
+    pendingDeps = null
+    if (pendingTimer) clearInterval(pendingTimer)
+    pendingTimer = null
+    newBuildNotice.set(false)
     staleBuildNotice.set(null)
 }

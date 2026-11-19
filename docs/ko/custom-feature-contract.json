@@ -1125,7 +1125,7 @@
     },
     {
       "id": "BUILD-WRITE-FENCE",
-      "title": "이전 빌드로 열린 탭의 쓰기 차단",
+      "title": "새 빌드가 나와도 이전 탭 저장 유지, 저장 형식이 바뀔 때만 차단",
       "criticality": "data-safety",
       "ownerFiles": [
         "server/node/build-fence.cjs",
@@ -1136,6 +1136,8 @@
       "requiredMarkers": [
         { "file": "vite.config.ts", "contains": "name: 'pocketrisu-build-id'" },
         { "file": "server/node/server.cjs", "contains": "app.use(createBuildFence({ readBuildId: readServedBuildId, logger }));" },
+        { "file": "server/node/build-fence.cjs", "contains": "BUILD-FENCE-LATEST-WINS: an older tab keeps saving; only a storage-format break stops it." },
+        { "file": "src/ts/storage/buildFence.ts", "contains": "BUILD-FENCE-LATEST-WINS: an older tab keeps saving; only a storage-format break stops it." },
         { "file": "src/ts/storage/nodeStorage.ts", "contains": "addBuildIdHeader(headers)" },
         { "file": "src/ts/storage/nodeStorage.ts", "contains": "const staleFor = await readStaleBuildRefusal(response)" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "setStaleBuildSaveState({" },

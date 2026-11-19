@@ -6,15 +6,20 @@ vi.mock('../../preload', () => ({ allowNextUnload: mocks.allowNextUnload }))
 
 const {
     BUILD_ID_HEADER,
+    STORAGE_EPOCH_HEADER,
+    STORAGE_FORMAT_EPOCH,
     addBuildIdHeader,
     checkServerBuild,
+    checkPendingBuildReload,
     decideStaleBuildAction,
     isStaleBuild,
+    newBuildNotice,
     onStaleBuild,
     readStaleBuildRefusal,
     registerUnsavedText,
     reloadIntoNewBuild,
     reportStaleBuild,
+    reportNewBuild,
     resetBuildFenceForTests,
     setClientBuildIdForTests,
     setStaleBuildSaveState,
@@ -66,7 +71,7 @@ describe('stale build decision', () => {
 })
 
 describe('reportStaleBuild', () => {
-    test('a clean tab stops saving, marks the server build and reloads without the leave prompt', () => {
+    test('an epoch refusal stops saving, marks the server build and reloads a clean tab', () => {
         const stop = vi.fn()
         onStaleBuild(stop)
         setStaleBuildSaveState({ hasUnsavedWork: () => false })
@@ -87,7 +92,7 @@ describe('reportStaleBuild', () => {
         expect(stop).toHaveBeenCalledOnce()
     })
 
-    test('unsaved edits keep the tab open with the download offered', () => {
+    test('an epoch refusal keeps unsaved edits open with the download offered', () => {
         const stop = vi.fn()
         onStaleBuild(stop)
         setStaleBuildSaveState({ hasUnsavedWork: () => true, downloadUnsavedEdits: async () => {} })
@@ -165,6 +170,7 @@ describe('refusal responses', () => {
         expect(await readStaleBuildRefusal(refusal('b2', 409))).toBeNull()
         expect(await readStaleBuildRefusal(new Response('Upgrade Required', { status: 426 }))).toBeNull()
         expect(await readStaleBuildRefusal(new Response(JSON.stringify({ code: 'OTHER', serverBuild: 'b2' }), { status: 426 }))).toBeNull()
+        expect(await readStaleBuildRefusal(new Response(JSON.stringify({ code: 'STALE_CLIENT_BUILD', serverBuild: null, serverEpoch: 1 }), { status: 426 }))).toBe('old-build')
     })
 
     test('the response body stays readable for the caller', async () => {
@@ -179,11 +185,51 @@ describe('build id header', () => {
         const headers = new Headers()
         addBuildIdHeader(headers)
         expect(headers.get(BUILD_ID_HEADER)).toBe('old-build')
+        expect(headers.get(STORAGE_EPOCH_HEADER)).toBe('1')
 
         setClientBuildIdForTests('')
         const devHeaders = new Headers()
         addBuildIdHeader(devHeaders)
         expect(devHeaders.has(BUILD_ID_HEADER)).toBe(false)
+        expect(devHeaders.has(STORAGE_EPOCH_HEADER)).toBe(false)
+    })
+
+    test('client and server storage epochs agree', async () => {
+        const { createRequire } = await import('node:module')
+        const server = createRequire(import.meta.url)('../../../server/node/build-fence.cjs')
+        expect(STORAGE_FORMAT_EPOCH).toBe(server.STORAGE_FORMAT_EPOCH)
+    })
+})
+
+describe('compatible newer build', () => {
+    test('a busy tab keeps saving behind a banner, then reloads when saved', () => {
+        const stop = vi.fn()
+        onStaleBuild(stop)
+        let busy = true
+        setStaleBuildSaveState({ hasUnsavedWork: () => busy })
+        const reload = vi.fn()
+        const storage = memoryStorage()
+        expect(reportNewBuild('b2', { reload, storage })).toBe('notice')
+        expect(stop).not.toHaveBeenCalled()
+        expect(isStaleBuild()).toBe(false)
+        expect(get(newBuildNotice)).toBe(true)
+        busy = false
+        expect(checkPendingBuildReload()).toBe('reload')
+        expect(reload).toHaveBeenCalledOnce()
+        expect(storage.map.get('pocketrisu-stale-build-reload')).toBe('b2')
+    })
+
+    test('unsent input and a cached old page keep saving with the banner', () => {
+        setStaleBuildSaveState({ hasUnsavedWork: () => false })
+        const unregister = registerUnsavedText(() => 'typed')
+        const reload = vi.fn()
+        const storage = memoryStorage({ 'pocketrisu-stale-build-reload': 'b2' })
+        expect(reportNewBuild('b2', { reload, storage })).toBe('notice')
+        unregister()
+        expect(checkPendingBuildReload()).toBe('notice')
+        expect(reload).not.toHaveBeenCalled()
+        expect(get(newBuildNotice)).toBe(true)
+        expect(isStaleBuild()).toBe(false)
     })
 })
 
@@ -202,13 +248,23 @@ describe('checkServerBuild', () => {
     })
 
     test('another build is reported, and a clean tab reloads', async () => {
+        // A tab reloads only when the save loop says nothing is unsaved; with
+        // no save state registered it keeps saving instead (latest wins).
+        setStaleBuildSaveState({ hasUnsavedWork: () => false })
         const reload = vi.fn()
         expect(await checkServerBuild(text('new-build\n'), { reload, storage: memoryStorage() })).toBe('stale')
         expect(reload).toHaveBeenCalledOnce()
-        // Already stale: further checks neither fetch nor reopen anything.
+        // A second check can see a later build while saving continues.
         const again = text('new-build\n')
         expect(await checkServerBuild(again, { reload, storage: memoryStorage() })).toBe('stale')
-        expect(again).not.toHaveBeenCalled()
+        expect(again).toHaveBeenCalledOnce()
+    })
+
+    test('another build with no save state yet keeps saving and does not reload', async () => {
+        const reload = vi.fn()
+        expect(await checkServerBuild(text('new-build\n'), { reload, storage: memoryStorage() })).toBe('stale')
+        expect(reload).not.toHaveBeenCalled()
+        expect(isStaleBuild()).toBe(false)
     })
 
     test.each([

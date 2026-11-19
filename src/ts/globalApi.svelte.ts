@@ -836,10 +836,8 @@ export async function saveDb() {
         if (supportsPatchSync && code !== 'ACCOUNT_IMPORT_ACTIVE' && code !== 'ACCOUNT_IMPORT_REPLACED') return
         handOffSession(event)
     })
-    // The server now serves a newer client build (storage/buildFence.ts), so
-    // this page's code is outdated: saving stops here as it does for a
-    // handoff, and the tracker keeps the edits. The fence then reloads the
-    // page, or with work unsaved keeps it open behind the stale-build notice.
+    // Only an incompatible storage epoch stops saving. A different code
+    // build continues through the normal save and conflict paths.
     onStaleBuild(() => {
         gotChannel = true
     })
