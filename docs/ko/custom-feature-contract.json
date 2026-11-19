@@ -554,7 +554,7 @@
         { "file": "src/ts/process/moduleSort.ts", "contains": "export function unpinModuleFavoritesOnce(" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "if (favoriteRootIndexes.has(index)) emitRoot(index)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "favoriteItemIndexes={legacyModuleFolders ? undefined : favoriteModuleIndexes}" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "interleaveModuleCatalogGroups(grouped, promotedIndex, promotedFolderId, legacyModuleFolders ? undefined : favorites, legacyModuleFolders ? undefined : active)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "interleaveModuleCatalogGroups(grouped, promotedIndex, promotedFolderId, favorites, active)" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "else if (holdsModulesOnNow(folderById.get(folderByIndex.get(index)!))) emitFolder(folderByIndex.get(index)!)" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "if (favoritesFolder) emitFolder(favoritesFolder.folder!.id)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "activeItemIndexes={legacyModuleFolders ? undefined : activeModuleIndexes}" },

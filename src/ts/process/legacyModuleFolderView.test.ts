@@ -1,7 +1,51 @@
 import { describe, expect, it } from 'vitest'
-import { legacyModuleFolderView } from './legacyModuleFolderView'
+import { interleaveLegacyModuleCatalogGroups, legacyActivationHistoryFromPlacements, legacyModuleFolderView, sortLegacyModulesByActivation, storedLegacyPlacements } from './legacyModuleFolderView'
 
 describe('legacyModuleFolderView', () => {
+    it('uses September favorite-first recency and promoted-entry interleaving', () => {
+        const modules = [
+            { id: 'favorite', name: 'Favorite', favorite: true },
+            { id: 'recent', name: 'Recent' },
+            { id: 'folder-member', name: 'Folder member', folderId: 'normal' },
+        ]
+        const sorted = sortLegacyModulesByActivation(modules, '', {
+            fallbackOrders: [['favorite', 'folder-member']], activationHistory: ['recent'],
+        })
+        expect(sorted.map((module) => module.id)).toEqual(['favorite', 'recent', 'folder-member'])
+
+        // Same priority as moduleSort.ts at 54288671e: the activated loose row,
+        // then favorite folders, empty folders, and first-member interleaving.
+        expect(interleaveLegacyModuleCatalogGroups([
+            { folder: { id: 'favorite-folder', favorite: true }, indexes: [2] },
+            { folder: { id: 'empty-folder' }, indexes: [] },
+            { folder: { id: 'normal' }, indexes: [3] },
+            { folder: null, indexes: [0, 1] },
+        ], 1)).toEqual([
+            { kind: 'root', indexes: [1] },
+            { kind: 'folder', folderId: 'favorite-folder' },
+            { kind: 'folder', folderId: 'empty-folder' },
+            { kind: 'root', indexes: [0] },
+            { kind: 'folder', folderId: 'normal' },
+        ])
+        expect(interleaveLegacyModuleCatalogGroups([
+            { folder: { id: 'favorite-folder', favorite: true }, indexes: [1] },
+            { folder: { id: 'normal' }, indexes: [2] },
+            { folder: null, indexes: [0] },
+        ], -1, 'normal')[0]).toEqual({ kind: 'folder', folderId: 'normal' })
+    })
+
+    it('keeps a loose drawn module in its hidden automatic folder after a menu reorder', () => {
+        const stored = ['hidden-auto', undefined, 'visible']
+        const drawn = [undefined, undefined, 'visible']
+        const moved = [{ index: 1, folderId: undefined }, { index: 0, folderId: undefined }, { index: 2, folderId: 'visible' }]
+        expect(storedLegacyPlacements(moved, drawn, stored)).toEqual([
+            { index: 1, folderId: undefined },
+            { index: 0, folderId: 'hidden-auto' },
+            { index: 2, folderId: 'visible' },
+        ])
+        expect(legacyActivationHistoryFromPlacements(moved, ['hidden', 'loose', 'visible'])).toEqual(['visible', 'hidden', 'loose'])
+    })
+
     it('draws generated folders loose and flattens user folders without mutating input', () => {
         const folders = [
             { id: 'link', name: '[링크]', moduleIds: ['link-module'], nodeOnlyLinkFolder: true },

@@ -19,6 +19,8 @@
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
     import { folderDepth, folderTree, foldersMatchingByName, groupByFolder, isFolderCollapsed, shownInside } from "src/ts/folders";
     import { interleaveModuleCatalogGroups } from "src/ts/process/moduleSort";
+    // LEGACY-MODULE-FOLDERS
+    import { interleaveLegacyModuleCatalogGroups } from "src/ts/process/legacyModuleFolderView";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import ShSortableList from "./GUI/ShSortableList.svelte";
     import ShButton from "./GUI/ShButton.svelte";
@@ -57,8 +59,8 @@
         maxFolderDepth?: number;
         /** LEGACY-MODULE-FOLDERS: hide nesting commands while a flat catalog view is drawn. */
         flatFolderView?: boolean;
-        /** LEGACY-MODULE-FOLDERS: place one real item without rewriting the flattened view. */
-        onItemMoveToFolder?: (index: number, folderId: string | undefined) => void;
+        /** LEGACY-MODULE-FOLDERS: submit the menu's drawn placements for history and protected storage. */
+        onItemMoveToFolder?: (placements: FolderedItemPlacement[]) => void;
         /** Render items without a folder as ordinary root rows instead of a
          *  synthetic "Uncategorized" folder card. The root remains a drop
          *  target so items can still be dragged out of real folders. */
@@ -68,6 +70,8 @@
         rootItemsFirst?: boolean;
         /** Keep standalone rows and folders in their item-recency order. */
         interleaveItems?: boolean;
+        /** LEGACY-MODULE-FOLDERS: September interleaving priority. */
+        legacyInterleave?: boolean;
         /** Promote one concrete top-level entry without moving every item of
          *  the same kind as a block. These are display-only indexes/IDs. */
         promotedItemIndex?: number;
@@ -136,6 +140,7 @@
         rootItemsStandalone = false,
         rootItemsFirst = false,
         interleaveItems = false,
+        legacyInterleave = false, // LEGACY-MODULE-FOLDERS
         promotedItemIndex = -1,
         promotedFolderId = '',
         favoriteItemIndexes = new Set<number>(),
@@ -245,7 +250,9 @@
     const remainingRootIndexes = $derived(rootIndexes.filter((index) => index !== promotedRootIndex));
     const remainingFolderGroups = $derived(displayGroups.filter((group) => group.folder?.id !== promotedFolderGroup?.folder?.id && !!group.folder));
     const interleavedBlocks = $derived(interleaveItems
-        ? interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId, favoriteItemIndexes, activeItemIndexes)
+        ? (legacyInterleave // LEGACY-MODULE-FOLDERS
+            ? interleaveLegacyModuleCatalogGroups(displayGroups, promotedRootIndex, promotedFolderId)
+            : interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId, favoriteItemIndexes, activeItemIndexes))
         : []);
     const displayItemCount = $derived(filteredGroups.reduce((count, group) => count + group.indexes.length, 0));
 
@@ -443,12 +450,12 @@
         const sel = parseInt(await alertSelect(options));
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
         const folderId = sel === 0 ? undefined : tree[sel - 1].folder.id;
-        // LEGACY-MODULE-FOLDERS
-        if (onItemMoveToFolder) { onItemMoveToFolder(index, folderId); return; }
         const placements = placementsFromData().filter(p => p.index !== index);
         // Append at the end of the chosen group.
         const lastInGroup = placements.map(p => p.folderId).lastIndexOf(folderId);
         placements.splice(lastInGroup + 1, 0, { index, folderId });
+        // LEGACY-MODULE-FOLDERS: use the same displayed-placement path as September's menu.
+        if (onItemMoveToFolder) { onItemMoveToFolder(placements); return; }
         onItemsChange(placements);
     }
 

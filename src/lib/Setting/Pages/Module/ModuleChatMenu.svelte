@@ -21,7 +21,7 @@
     import { onDestroy, onMount, untrack } from "svelte";
     import { getLatestModuleCatalogPromotion, interleaveModuleCatalogGroups, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation, unpinModuleFavoritesOnce } from "src/ts/process/moduleSort";
     // LEGACY-MODULE-FOLDERS
-    import { legacyModuleFolderView } from "src/ts/process/legacyModuleFolderView";
+    import { interleaveLegacyModuleCatalogGroups, legacyModuleFolderView, sortLegacyModulesByActivation } from "src/ts/process/legacyModuleFolderView";
     import { listTitleColor, shownMissingAssetCount } from "src/ts/gui/titleColors";
     import { restoreIllustrationPresets } from "src/ts/process/illustrationRun";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
@@ -46,7 +46,12 @@
 
     const query = $derived(moduleSearch.trim().toLocaleLowerCase())
     const pairedModules = $derived(moduleLinks(DBState.db.modules, DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []))
-    let sortedModules = $derived(sortModulesByActivation(DBState.db.modules, '', {
+    // LEGACY-MODULE-FOLDERS: read before deriving the September sort.
+    function readLegacyModuleFolders() {
+        try { return typeof localStorage !== 'undefined' && localStorage.getItem('risu-module-folder-legacy') === 'true' } catch { return false }
+    }
+    let legacyModuleFolders = $state(readLegacyModuleFolders())
+    let sortedModules = $derived((legacyModuleFolders ? sortLegacyModulesByActivation : sortModulesByActivation)(DBState.db.modules, '', { // LEGACY-MODULE-FOLDERS
         fallbackOrders: [
             DBState.db.enabledModules,
             DBState.db.characters[$selectedCharID]?.modules,
@@ -66,11 +71,6 @@
             activationHistory: DBState.db.moduleActivationHistory,
         },
     ))
-    // LEGACY-MODULE-FOLDERS: read the same per-device view choice as ModuleSettings.
-    function readLegacyModuleFolders() {
-        try { return typeof localStorage !== 'undefined' && localStorage.getItem('risu-module-folder-legacy') === 'true' } catch { return false }
-    }
-    let legacyModuleFolders = $state(readLegacyModuleFolders())
     let legacyFolderView = $derived(legacyModuleFolders ? legacyModuleFolderView(sortedModules, sortedFolders) : undefined)
     const catalogPromotion = $derived(getLatestModuleCatalogPromotion(
         DBState.db.modules,
@@ -98,7 +98,9 @@
         const bot = DBState.db.characters[$selectedCharID]
         const active = new Set(sortedModules.flatMap((module, index) => module
             && (DBState.db.enabledModules.includes(module.id) || !!chat?.modules?.includes(module.id) || !!bot?.modules?.includes(module.id)) ? [index] : []))
-        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, promotedFolderId, legacyModuleFolders ? undefined : favorites, legacyModuleFolders ? undefined : active)
+        const order = legacyModuleFolders // LEGACY-MODULE-FOLDERS
+            ? interleaveLegacyModuleCatalogGroups(grouped, promotedIndex, promotedFolderId)
+            : interleaveModuleCatalogGroups(grouped, promotedIndex, promotedFolderId, favorites, active)
         const result: ModuleMenuGroup[] = []
         for (const block of order) {
             if (block.kind === 'root') {
