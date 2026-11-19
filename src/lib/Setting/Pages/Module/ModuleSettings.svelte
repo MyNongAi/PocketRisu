@@ -41,6 +41,7 @@
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
     import { dropMissingBotModules, folderBotLinkChange, forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
+    import { moduleGlobeHold } from "src/ts/gui/moduleGlobeHold";
 
     let { sidePanel = false }: { sidePanel?: boolean } = $props();
 
@@ -655,6 +656,7 @@
         {#snippet itemContent(index)}
             {@const rmodule = displayModules[index]}
             {@const source = moduleSource(rmodule)}
+            {@const globeLabel = `${isGlobal(rmodule) ? language.enableGlobal : isBotModule(rmodule) ? language.moduleAutoForBot : isIllustrationOn(rmodule) ? language.moduleAutoForIllustration : isEditModeOn(rmodule) ? language.moduleAutoForEditMode : language.enableGlobal}${openBot ? ' · 꾹 누르면 지금 봇에 연결/해제' : ''}`}
             {#if rmodule.mcp}
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
@@ -672,9 +674,11 @@
                     · 에셋 {moduleAssetCount(rmodule)}개{#if isColdModule(rmodule)} · {language.moduleColdBadge}{/if} · {rmodule.description || 'No description provided'}
                 </span>
             </div>
-            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
-                use:tooltip={isGlobal(rmodule) ? language.enableGlobal : isBotModule(rmodule) ? language.moduleAutoForBot : isIllustrationOn(rmodule) ? language.moduleAutoForIllustration : isEditModeOn(rmodule) ? language.moduleAutoForEditMode : language.enableGlobal}
-                onclick={(e) => { e.stopPropagation(); toggleGlobal(rmodule) }}>
+            <!-- MODULE-BOT-LINK-MENU: globe hold links the open bot (user request, 2026-11-20). -->
+            <button class="no-sort select-none [-webkit-touch-callout:none] shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                use:tooltip={globeLabel}
+                use:moduleGlobeHold={{ tap: () => toggleGlobal(rmodule), hold: () => toggleBotLink(rmodule), canHold: () => !!openBot }}
+                aria-label={globeLabel}>
                 <Globe size={18}/>
             </button>
         {/snippet}

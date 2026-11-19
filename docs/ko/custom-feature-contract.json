@@ -2090,16 +2090,20 @@
       "ownerFiles": [
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
         "src/lib/UI/FolderedList.svelte",
-        "src/ts/gui/pairedModules.ts"
+        "src/ts/gui/pairedModules.ts",
+        "src/ts/gui/moduleGlobeHold.ts"
       ],
       "requiredMarkers": [
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleBotLink(" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "use:moduleGlobeHold=" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleFolderBotLink(" },
+        { "file": "src/ts/gui/moduleGlobeHold.ts", "contains": "export function moduleGlobeHold(" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "folderMenuItems?.(folder, indexes)" },
         { "file": "src/ts/gui/pairedModules.ts", "contains": "export function folderBotLinkChange(" }
       ],
       "regressionTests": [
-        "src/ts/gui/pairedModules.test.ts"
+        "src/ts/gui/pairedModules.test.ts",
+        "src/ts/gui/moduleGlobeHold.test.ts"
       ]
     },
     {
