@@ -1367,6 +1367,7 @@ export const languageEnglish = {
     noModules: "No modules has been installed.",
     createModule: "Create Module",
     basicInfo: "Basic Info",
+    presetQuickSettings: "Frequently used",
     moduleContent: "Module Content",
     confirmRemoveModuleFeature: "Do you really want to remove this feature? This action cannot be undone.",
     editModule: "Edit Module",

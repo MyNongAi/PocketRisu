@@ -1459,6 +1459,7 @@ export const languageKorean = {
   noModules: "모듈이 없습니다.",
   createModule: "모듈 생성",
   basicInfo: "기본 정보",
+  presetQuickSettings: "자주 쓰는 설정",
   moduleContent: "모듈 내용",
   confirmRemoveModuleFeature: "정말로 이 기능을 삭제하시겠습니까?",
   editModule: "모듈 수정",

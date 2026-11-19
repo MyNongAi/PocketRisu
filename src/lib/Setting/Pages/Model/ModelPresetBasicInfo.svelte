@@ -9,6 +9,8 @@
     import { localizeDescription } from "src/ts/preset/registry/i18n";
     import type { ModelPreset } from "src/ts/preset/types";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
+    import SchemaFormRenderer from "src/lib/UI/GUI/SchemaFormRenderer.svelte";
+    import { quickSettingKeys } from "src/ts/preset/quickSettings";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import { v4 as uuidv4 } from "uuid";
 
@@ -65,6 +67,7 @@
     const installedLabel = $derived(fmtDate(preset.sourceProfile?.profileUpdatedAt));
     const latestLabel = $derived(fmtDate(sourceLookup.current?.updatedAt));
     const description = $derived(sourceLookup.current ? localizeDescription(sourceLookup.current) : '');
+    const quickKeys = $derived(quickSettingKeys(preset.profileSnapshot.uiSchema));
 
     function fmtDate(ms?: number): string {
         // Strip the ko-locale trailing period ("2026. 6. 3." -> "2026. 6. 3").
@@ -157,6 +160,21 @@
         </div>
     </div>
     </div>
+
+    <!-- QUICK-PRESET-SETTINGS: reasoning and request tier on the first tab, bound to the same values. -->
+    {#if quickKeys.length > 0}
+        <section class="flex flex-col gap-3 min-w-0">
+            <h3 class="text-sm font-semibold text-textcolor">{language.presetQuickSettings}</h3>
+            <SchemaFormRenderer
+                schema={preset.profileSnapshot.schema}
+                uiSchema={preset.profileSnapshot.uiSchema}
+                userValues={preset.userValues}
+                visibility="all"
+                onlyKeys={quickKeys}
+                {preset}
+            />
+        </section>
+    {/if}
 
     <div class="flex flex-col gap-2">
         <ShButton variant="default" size="default" className="w-full" onclick={duplicate}>

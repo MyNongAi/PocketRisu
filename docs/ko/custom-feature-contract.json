@@ -5,6 +5,22 @@
   "updatedAt": "2026-11-19",
   "features": [
     {
+      "id": "QUICK-PRESET-SETTINGS",
+      "title": "모델 프리셋 기본 정보의 자주 쓰는 설정",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Setting/Pages/Model/ModelPresetBasicInfo.svelte",
+        "src/lib/UI/GUI/SchemaFormRenderer.svelte",
+        "src/ts/preset/quickSettings.ts",
+        "src/lang/en.ts",
+        "src/lang/ko.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/Model/ModelPresetBasicInfo.svelte", "contains": "<!-- QUICK-PRESET-SETTINGS: reasoning and request tier on the first tab, bound to the same values. -->" }
+      ],
+      "regressionTests": ["src/ts/preset/quickSettings.test.ts"]
+    },
+    {
       "id": "GEMINI-RELAY",
       "title": "Gemini 요청 미국·일본 중계",
       "criticality": "core-ux",

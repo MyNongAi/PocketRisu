@@ -16,12 +16,13 @@
         schema: RegistryFieldSchema[];
         uiSchema: RegistryUiSchema;
         userValues: Record<string, unknown>;
-        visibility: UiVisibility;
+        visibility: UiVisibility | 'all';
+        onlyKeys?: string[];
         // Passed through to auth fields so they can render the saved-key picker.
         preset?: ModelPreset;
     }
 
-    let { schema, uiSchema, userValues = $bindable(), visibility, preset }: Props = $props();
+    let { schema, uiSchema, userValues = $bindable(), visibility, onlyKeys, preset }: Props = $props();
 
     // Seed defaults into userValues for fields that the snapshot defines a
     // `default` for. Idempotent — only writes when the key is still undefined.
@@ -61,7 +62,9 @@
             // Tolerate null/undefined elements from a malformed/persisted snapshot
             // so a single bad entry can't crash rendering (reading `.visibility` of null).
             if (!uiField) continue;
-            if (uiField.visibility !== visibility) continue;
+            if (visibility !== 'all' && uiField.visibility !== visibility) continue;
+            if (onlyKeys && !onlyKeys.includes(uiField.key)) continue;
+            if (uiField.visibility === 'hidden') continue;
             if (!evalShowIf(uiField)) continue;
             const schemaField = schema.find((f) => f?.key === uiField.key);
             if (!schemaField) continue;
@@ -74,7 +77,7 @@
         // uiSchema so healthy/partial snapshots are never touched.
         if (visibility === 'basic' && !uiSchema.fields.some(Boolean)) {
             for (const f of schema) {
-                if (!f) continue;
+                if (!f || (onlyKeys && !onlyKeys.includes(f.key))) continue;
                 out.push({ schemaField: f, uiField: { key: f.key, widget: fieldToWidget(f), visibility: 'basic' } });
             }
         }
@@ -93,6 +96,10 @@
     const entries = $derived(visibleEntries());
 
     const groupedRendered = $derived.by(() => {
+        if (onlyKeys) {
+            const ordered = [...entries].sort((a, b) => onlyKeys.indexOf(a.uiField.key) - onlyKeys.indexOf(b.uiField.key));
+            return ordered.length ? [{ label: null, items: ordered }] : [];
+        }
         // Tolerate null/undefined group elements from a malformed/persisted
         // snapshot so a bad entry can't crash the sort (reading `.order` of null).
         const groupOrder = uiSchema.groups
@@ -126,7 +133,7 @@
     });
 </script>
 
-{#if groupedRendered.length === 0}
+{#if groupedRendered.length === 0 && !onlyKeys}
     {#if visibility === 'basic' && !schema.some(Boolean)}
         <!-- Fully degenerate snapshot (no schema fields to even fall back to) that
              heal couldn't repair. Don't dead-end on a blank/"no items" form —
