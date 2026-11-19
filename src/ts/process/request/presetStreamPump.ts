@@ -102,6 +102,7 @@ export interface PumpPresetStreamOptions {
     // caller can reconcile token counts. Like the others, the caller wraps it
     // harmlessly; it never affects stream output.
     onFinish?: (outcome: 'done' | 'failed', lastUsage?: AdapterChatStreamDelta['usage']) => void
+    isCancelled?: () => boolean
 }
 
 // Waits for an adapter stream's first delta and returns the stream with that
@@ -128,7 +129,7 @@ export async function pumpPresetStream(
     controller: StreamChunkController,
     options: PumpPresetStreamOptions,
 ): Promise<void> {
-    const { intervalMs, formatReasoning, onError, onDelta, onFinish } = options
+    const { intervalMs, formatReasoning, onError, onDelta, onFinish, isCancelled } = options
     let lastUsage: AdapterChatStreamDelta['usage'] | undefined
     let fullText = ''
     let reasoningText = ''
@@ -161,6 +162,7 @@ export async function pumpPresetStream(
         }
         trailingTimer = setTimeout(() => {
             trailingTimer = null
+            if (isCancelled?.()) return
             if (throttle.onTrailing(Date.now())) {
                 armTrailing()
             }
@@ -169,6 +171,9 @@ export async function pumpPresetStream(
 
     try {
         for await (const delta of gen) {
+            // 2026-11-20: ReadableStream.cancel() does not cancel this
+            // independently running pump. Stop before reporting more tokens.
+            if (isCancelled?.()) break
             onDelta?.(delta)
             // Merge rather than replace: Anthropic splits usage across events
             // (input_tokens on message_start, output_tokens on message_delta),
@@ -187,11 +192,13 @@ export async function pumpPresetStream(
             }
         }
         clearTrailing()
+        if (isCancelled?.()) { onFinish?.('failed', lastUsage); return }
         throttle.onEnd(Date.now())
         controller.close()
         onFinish?.('done', lastUsage)
     } catch (err) {
         clearTrailing()
+        if (isCancelled?.()) { onFinish?.('failed', lastUsage); return }
         onError?.(err)
         controller.error(err)
         onFinish?.('failed', lastUsage)

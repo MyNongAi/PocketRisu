@@ -258,7 +258,9 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
                 }
             }
 
-            if(abortSignal?.aborted){
+            // 2026-11-20: A provider may finish despite Stop. Preserve a
+            // complete result for the send pipeline's chat/ownership guard.
+            if(abortSignal?.aborted && da.type !== 'success'){
                 return {
                     type: 'fail',
                     result: 'Aborted'
@@ -273,6 +275,12 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
                 for(const replacer of pluginV2.replacerafterRequest){
                     da.result = await replacer(da.result, model)
                 }
+            }
+
+            // 2026-11-20: Do not retry a completed answer after Stop; a
+            // subsequent loop iteration would discard it at the entry guard.
+            if (da.type === 'success' && abortSignal?.aborted) {
+                return { ...da, model: fallBackModels[fallbackIndex] || da.model }
             }
 
             if(da.type === 'success' && db.banCharacterset?.length > 0){
@@ -1099,10 +1107,12 @@ async function requestModelPresetAttempt(arg:RequestDataArgumentExtended, preset
             // sent once).
             const gen = await awaitFirstDelta(streamModelPreset(kind, preset, options, credential))
             streamStarted = true
+            let streamCancelled = false
             const stream = new ReadableStream<StreamResponseChunk>({
                 start(controller){
                     return pumpPresetStream(gen, controller, {
                         intervalMs: STREAM_FLUSH_INTERVAL_MS,
+                        isCancelled: () => streamCancelled,
                         formatReasoning: (text) => formatPresetReasoning([{ text }]),
                         onError: (err) => console.error('[ModelPreset] stream error', describeModelPresetError(err)),
                         // appendText owns the phase transition (thinking/responding)
@@ -1140,7 +1150,12 @@ async function requestModelPresetAttempt(arg:RequestDataArgumentExtended, preset
                             void logScope.close()
                         },
                     })
-                }
+                },
+                cancel() {
+                    // 2026-11-20: Stop the pump as well as the chat reader.
+                    streamCancelled = true
+                    void gen.return(undefined).catch(() => {})
+                },
             })
             // Decoupled streaming: the wire request still streams (keeping the
             // provider's lenient streaming limits), but we drain the stream here

@@ -687,7 +687,7 @@ async function pollRunningJob(
             safeStatus(() => endStatus(statusId, outcome, { now: Date.now(), error }))
         }
     }
-    abortSignal?.addEventListener('abort', () => {
+    const abortJob = () => {
         // Stop pressed on the reattached job: DELETE the job fire-and-forget
         // (abort must never hang on cleanup); the loop exit below stops the
         // polling.
@@ -695,7 +695,10 @@ async function pollRunningJob(
             await fetch(`/api/model-jobs/${job.id}`, { method: 'DELETE', headers: await authHeader() })
         })().catch(() => {})
         finish('aborted')
-    }, { once: true })
+    }
+    abortSignal?.addEventListener('abort', abortJob, { once: true })
+    // 2026-11-20: Stop may land between controller registration and poll setup.
+    if (abortSignal?.aborted) { abortJob(); return }
     while (Date.now() < deadline) {
         await sleep(interval)
         if (abortSignal?.aborted) return // finished by the abort listener
@@ -718,6 +721,7 @@ async function pollRunningJob(
         } catch {
             continue
         }
+        if (abortSignal?.aborted) return
         if (current.status === 'running') continue
         diag(`poll ${job.id.slice(0, 8)}: terminal status=${current.status}`)
         if (current.status !== 'aborted') {

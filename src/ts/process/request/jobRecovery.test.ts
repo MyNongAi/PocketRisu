@@ -97,6 +97,7 @@ interface ServerBehavior {
     jobStatusUnreachable?: boolean
     /** runs while a job's journal is being fetched */
     onJournal?: (jobId: string) => void
+    onStatusResponse?: () => void
 }
 
 function setupServer(behavior: ServerBehavior) {
@@ -144,6 +145,7 @@ function setupServer(behavior: ServerBehavior) {
             const states = behavior.jobStates?.[jobMatch[1]]
             if (!states || states.length === 0) return new Response('{"error":"Job not found"}', { status: 404 })
             const next = states.length > 1 ? states.shift() : states[0]
+            behavior.onStatusResponse?.()
             return new Response(JSON.stringify(next), { status: 200 })
         }
         throw new Error(`unexpected fetch: ${method} ${url}`)
@@ -1139,6 +1141,23 @@ describe('attachRunningJob', () => {
         await vi.advanceTimersByTimeAsync(recovery.JOB_POLL_MAX_MS * 2)
         const getsAfter = calls.filter((c) => c.method === 'GET' && c.url === '/api/model-jobs/job-1').length
         expect(getsAfter).toBe(getsBefore)
+        status.stopStatusTimer()
+    })
+
+    test('2026-11-20: Stop during a terminal status fetch prevents recovery slot-in', async () => {
+        vi.useFakeTimers()
+        const { recovery, genState, status } = await loadModules()
+        const chat = makeChat()
+        mocks.db.characters = [makeChar(chat)]
+        const { calls } = setupServer({
+            jobStates: { 'job-1': [makeJob({ status: 'done' })] },
+            onStatusResponse: () => { genState.abortGeneration('chat-1') },
+        })
+        recovery.attachRunningJob(makeJob({ status: 'running' }) as any)
+        await vi.advanceTimersByTimeAsync(recovery.JOB_POLL_MAX_MS * 2)
+        expect(calls.some((c) => c.method === 'DELETE' && c.url === '/api/model-jobs/job-1')).toBe(true)
+        expect(chat.message).toHaveLength(0)
+        expect(get(status.requestStatuses).get('gen-1')?.phase).toBe('aborted')
         status.stopStatusTimer()
     })
 

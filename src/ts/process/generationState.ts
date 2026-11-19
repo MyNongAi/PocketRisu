@@ -68,6 +68,15 @@ export const isAnyGenerating: Readable<boolean> = derived(generationStates, (m) 
 const pendingAborts = new Map<string, AbortController>()
 const auxiliaryAborts = new Map<string, AbortController>()
 const userAbortedChatKeys = new Set<string>()
+// 2026-11-20: Remember the last admitted send after Stop force-releases its
+// entry, so a late completed reply cannot overwrite a newer send or reroll.
+const latestLiveGeneration = new Map<string, string>()
+export function isLatestLiveGeneration(chatKey: string, generationId: string): boolean {
+    return latestLiveGeneration.get(chatKey) === generationId
+}
+export function canKeepLateCompleteReply(chatKey: string, generationId: string, targetChatId: string, resolvedChatId?: string): boolean {
+    return resolvedChatId === targetChatId && isLatestLiveGeneration(chatKey, generationId)
+}
 export function wasGenerationAborted(chatKey: string): boolean {
     return userAbortedChatKeys.has(chatKey)
 }
@@ -179,6 +188,7 @@ export function tryStartGeneration(
         return next
     })
     if (decision.allowed) {
+        latestLiveGeneration.set(chatKey, generationId)
         clearGenerationAborted(chatKey)
         syncDoingChat()
     }

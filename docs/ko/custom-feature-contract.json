@@ -1152,6 +1152,7 @@
         { "file": "public/sw.js", "contains": "self.addEventListener('push'" },
         { "file": "public/sw.js", "contains": "self.addEventListener('notificationclick'" },
         { "file": "src/ts/process/request/jobFetch.ts", "contains": "export async function claimModelJob(" },
+        { "file": "src/ts/process/request/jobFetch.ts", "contains": "if (signal?.aborted) abortJob()" },
         { "file": "src/lib/Setting/Pages/NotificationSoundSettings.svelte", "contains": "<ServerReplyPushToggle />" }
       ],
       "regressionTests": [
@@ -2746,6 +2747,7 @@
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/status/requestStatusDock.ts",
+        "src/ts/process/request/presetStreamPump.ts",
         "src/lib/UI/GUI/RequestStatusToaster.svelte",
         "src/lib/UI/GUI/RequestStatusDock.svelte"
       ],
@@ -2755,10 +2757,14 @@
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (!get(minimizedRequests).includes(id) && staysOpenUnseen(entry, currentChatId())) {" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "onclick={goToChat}><ChevronRightIcon size={14} /></button>" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "if (entry && !entry.remote && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)" },
+        { "file": "src/ts/process/generationState.ts", "contains": "export function canKeepLateCompleteReply(" },
+        { "file": "src/ts/process/request/presetStreamPump.ts", "contains": "if (isCancelled?.()) break" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "window.addEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)" }
       ],
       "regressionTests": [
-        "src/ts/status/requestStatusDock.test.ts"
+        "src/ts/status/requestStatusDock.test.ts",
+        "src/ts/process/request/presetStreamPump.test.ts",
+        "src/ts/process/generationState.test.ts"
       ]
     },
     {
@@ -3955,6 +3961,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/request/jobRecovery.ts", "contains": "return oneSlotInPerChat(job.chatId, () => slotInTerminalJob(job))" },
+        { "file": "src/ts/process/request/jobRecovery.ts", "contains": "if (abortSignal?.aborted) { abortJob(); return }" },
         { "file": "src/ts/process/request/jobRecovery.ts", "contains": "const located = await locateChat(job.chatId)" },
         { "file": "src/ts/process/request/jobRecovery.ts", "contains": "if (reply && (job.generationId || reply.chatId) && jobMessageIndex(loc.chat, job, reply.chatId) === -1) {" },
         { "file": "src/ts/process/request/jobRecovery.ts", "contains": ".then((module) => setRecoveredOutputPipeline(module.postProcessRecoveredMessage as RecoveredOutputPipeline))" },

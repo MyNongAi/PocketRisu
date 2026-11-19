@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 import {
     abortGeneration,
+    canKeepLateCompleteReply,
     auxiliaryGenerating,
     chatGenKey,
     chatProcessStage,
@@ -36,6 +37,19 @@ describe('chatGenKey', () => {
     })
     it('falls back to a shared key for id-less chats', () => {
         expect(chatGenKey(undefined)).toBe(chatGenKey(undefined))
+    })
+})
+
+describe('late complete reply (2026-11-20)', () => {
+    it('keeps a completed reply for the same chat while no newer send has started', () => {
+        expect(tryStartGeneration('late-chat', 'old').allowed).toBe(true)
+        endGeneration('late-chat', { generationId: 'old' }) // Stop grace release
+        expect(canKeepLateCompleteReply('late-chat', 'old', 'late-chat', 'late-chat')).toBe(true)
+        expect(canKeepLateCompleteReply('late-chat', 'old', 'late-chat', 'other-chat')).toBe(false)
+        expect(canKeepLateCompleteReply('late-chat', 'old', 'late-chat')).toBe(false)
+        expect(tryStartGeneration('late-chat', 'new').allowed).toBe(true)
+        expect(canKeepLateCompleteReply('late-chat', 'old', 'late-chat', 'late-chat')).toBe(false)
+        endGeneration('late-chat', { generationId: 'new' })
     })
 })
 

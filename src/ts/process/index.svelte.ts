@@ -42,7 +42,7 @@ import { isColdModule, wakeModules } from "./moduleCold.svelte";
 import { hydrateAssetListsForCbs, serializeForCbsScan } from "../parser/assetListHydration";
 import { forageStorage, readImage, resolvePrioritizedAssetManifestNames } from "../globalApi.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
-import { abortGeneration, chatGenKey, chatProcessStage, endGeneration, getGenerationAdmission, onDatabaseRebased, registerAbort, setGenerationStage, tryStartGeneration } from "./generationState";
+import { abortGeneration, canKeepLateCompleteReply, chatGenKey, chatProcessStage, endGeneration, getGenerationAdmission, onDatabaseRebased, registerAbort, setGenerationStage, tryStartGeneration } from "./generationState";
 import { clearPendingSend, registerPendingSend } from "./request/pendingSends";
 import { pruneScriptstateCheckpoints, recordScriptstateCheckpoint, snapshotScriptstate } from "../chatScriptstateCheckpoint";
 import { captureGenerationTarget, placeChat, resolveGenerationTarget, type GenerationTargetIdentity } from './generationTarget';
@@ -1837,7 +1837,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     let emoChanged = false
     let resendChat = false
     
-    if(abortSignal.aborted === true){
+    // 2026-11-20: A full reply that arrives after Stop belongs in its original
+    // chat only while this is still that chat's newest admitted send/reroll.
+    const lateCompleteReply = abortSignal.aborted && req.type === 'success'
+    const mayWriteLateReply = () => !abortSignal.aborted || canKeepLateCompleteReply(
+        genKey, generationId, realChatId,
+        resolveGenerationTarget(DBState.db.characters, generationTarget)?.chat.id,
+    )
+    if(abortSignal.aborted === true && (!lateCompleteReply || !canKeepLateCompleteReply(genKey, generationId, realChatId, responseTarget.chat.id))){
         if (realChatId) clearPendingSend(realChatId)
         return false
     }
@@ -2067,6 +2074,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             let mess = msg[1]
             let msgIndex = currentChat.message.length
             let result2 = await processScriptFull(nowChatroom, reformatContent(mess), 'editoutput', msgIndex, {}, getRuntimeModuleContext())
+            if (!mayWriteLateReply()) return false
             if(i === 0 && arg.continue){
                 msgIndex -= 1
                 let beforeChat = currentChat.message[msgIndex]
@@ -2075,6 +2083,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             if(DBState.db.removeIncompleteResponse){
                 result2.data = trimUntilPunctuation(result2.data)
             }
+            if (!mayWriteLateReply()) return false
             result = result2.data
             const inlayResult = runInlayScreen(currentChar, result)
             result = inlayResult.text

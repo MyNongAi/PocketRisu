@@ -128,6 +128,31 @@ async function* genOf(
 const passthroughReasoning = (t: string) => t
 
 describe('pumpPresetStream', () => {
+    test('2026-11-20: cancellation stops status tokens from an independent pump', async () => {
+        const controller = makeController()
+        const onDelta = vi.fn()
+        const onFinish = vi.fn()
+        let release!: () => void
+        const gate = new Promise<void>((resolve) => { release = resolve })
+        let cancelled = false
+        async function* delayed(): AsyncGenerator<AdapterChatStreamDelta, void, void> {
+            yield { textDelta: 'first', raw: null }
+            await gate
+            yield { textDelta: 'late', raw: null }
+        }
+        const done = pumpPresetStream(delayed(), controller, {
+            intervalMs: 50, formatReasoning: passthroughReasoning,
+            onDelta, onFinish, isCancelled: () => cancelled,
+        })
+        await vi.waitFor(() => expect(onDelta).toHaveBeenCalledTimes(1))
+        cancelled = true
+        release()
+        await done
+        expect(onDelta).toHaveBeenCalledTimes(1)
+        expect(controller.enqueued).toEqual([{ '0': 'first' }])
+        expect(onFinish).toHaveBeenCalledWith('failed', undefined)
+    })
+
     test('pumps deltas through and closes, leaking no timer', async () => {
         vi.useFakeTimers()
         try {

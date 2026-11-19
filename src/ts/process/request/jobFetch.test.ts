@@ -59,6 +59,9 @@ function setupServer(behavior: ServerBehavior) {
             const c = behavior.create ?? { status: 200, body: { jobId: 'job-1' } }
             return new Response(JSON.stringify(c.body ?? {}), { status: c.status })
         }
+        if (url === '/api/model-jobs?active=1') {
+            return new Response(JSON.stringify({ jobs: [{ id: 'job-1', chatId: 'chat-1', generationId: 'gen-1' }] }), { status: 200 })
+        }
         if (url === '/api/model-jobs/job-1/stream') {
             if (behavior.streamRejectTimes && behavior.streamRejectTimes > 0) {
                 behavior.streamRejectTimes -= 1
@@ -331,6 +334,34 @@ describe('makeJobFetch', () => {
         })
         void res.body!.getReader().read().catch(() => {})
         controller.abort()
+        await vi.waitFor(() => {
+            expect(callsFor(calls, '/api/model-jobs/job-1', 'DELETE')).toHaveLength(1)
+        })
+    })
+
+    test('2026-11-20: cancelling an attached stream does not lose a later Stop', async () => {
+        const { calls } = setupServer({ streamNeverEnds: true })
+        const controller = new AbortController()
+        const res = await makeJobFetch(makeOpts())('https://provider.example/v1/chat', {
+            method: 'POST', body: '{}', signal: controller.signal,
+        })
+        await res.body!.cancel()
+        controller.abort()
+        await vi.waitFor(() => {
+            expect(callsFor(calls, '/api/model-jobs/job-1', 'DELETE')).toHaveLength(1)
+        })
+    })
+
+    test('2026-11-20: Stop before the create response arrives deletes its unknown job', async () => {
+        const controller = new AbortController()
+        const { calls, fetchMock } = setupServer({})
+        fetchMock.mockImplementationOnce(async () => {
+            controller.abort()
+            throw new DOMException('The operation was aborted.', 'AbortError')
+        })
+        await expect(makeJobFetch(makeOpts({ generationId: 'gen-1' }))('https://provider.example/v1/chat', {
+            method: 'POST', body: '{}', signal: controller.signal,
+        })).rejects.toThrow('aborted')
         await vi.waitFor(() => {
             expect(callsFor(calls, '/api/model-jobs/job-1', 'DELETE')).toHaveLength(1)
         })

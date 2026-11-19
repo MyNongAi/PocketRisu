@@ -104,6 +104,17 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
     return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input.toString()
         const signal = init?.signal ?? undefined
+        // 2026-11-20: POST can create the job and then lose its response before
+        // the client learns the id. Stop must still find and delete that job.
+        const deleteUnknownCreatedJob = () => {
+            if (!opts.generationId) return
+            void (async () => {
+                const listed = await fetch('/api/model-jobs?active=1', { headers: await authHeader() })
+                const { jobs } = await listed.json() as { jobs?: { id: string, chatId?: string, generationId?: string }[] }
+                const own = jobs?.find((job) => job.generationId === opts.generationId && job.chatId === opts.realChatId)
+                if (own) await fetch(`/api/model-jobs/${own.id}`, { method: 'DELETE', headers: await authHeader() })
+            })().catch(() => {})
+        }
 
         // 1. Create the job. Infra failures fall back to the direct path;
         //    409 (chat already generating) must surface, never fall back.
@@ -132,7 +143,7 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
                 signal,
             })
         } catch (err) {
-            if (signal?.aborted) throw err
+            if (signal?.aborted) { deleteUnknownCreatedJob(); throw err }
             console.warn('[ModelJob] job creation failed, falling back to direct request path', err)
             return opts.fallbackFetch(input, init)
         }
@@ -147,6 +158,12 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
             // generation is a genuine conflict and must surface (issue #87).
             let busy: { jobId?: string, generationId?: string } = {}
             try { busy = await created.json() } catch { /* body optional */ }
+            if (signal?.aborted) {
+                if (busy.jobId && busy.generationId === opts.generationId) {
+                    void fetch(`/api/model-jobs/${busy.jobId}`, { method: 'DELETE', headers: await authHeader() }).catch(() => {})
+                } else deleteUnknownCreatedJob()
+                throw new DOMException('The operation was aborted.', 'AbortError')
+            }
             if (!busy.jobId || busy.generationId !== opts.generationId) {
                 throw new ModelJobBusyError()
             }
@@ -162,12 +179,7 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
                 // Aborted while the create response was read: the job runs,
                 // but its id never arrived. Find it by this generation's id.
                 if (signal?.aborted && opts.generationId) {
-                    void (async () => {
-                        const listed = await fetch('/api/model-jobs?active=1', { headers: await authHeader() })
-                        const { jobs } = await listed.json() as { jobs?: { id: string, chatId?: string, generationId?: string }[] }
-                        const own = jobs?.find((job) => job.generationId === opts.generationId && job.chatId === opts.realChatId)
-                        if (own) await fetch(`/api/model-jobs/${own.id}`, { method: 'DELETE', headers: await authHeader() })
-                    })().catch(() => {})
+                    deleteUnknownCreatedJob()
                 }
                 throw err
             }
@@ -176,7 +188,10 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
         // Abort propagation: aborting the request DELETEs the job (server
         // aborts the upstream) and cancels the local stream fetch (same
         // signal). Fire-and-forget — abort must never hang on cleanup.
+        let abortSent = false
         const abortJob = () => {
+            if (abortSent) return
+            abortSent = true
             void (async () => {
                 await fetch(`/api/model-jobs/${jobId}`, { method: 'DELETE', headers: await authHeader() })
             })().catch(() => {})
@@ -379,7 +394,9 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
                 }
             },
             cancel(reason) {
-                detach()
+                // 2026-11-20: Stop can cancel the consumer before the journal
+                // reader observes abort. Keep the DELETE listener until it fires.
+                if (signal?.aborted) abortJob()
                 return reader.cancel(reason)
             },
         })
