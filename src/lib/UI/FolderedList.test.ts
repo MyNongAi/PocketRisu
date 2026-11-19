@@ -102,6 +102,15 @@ describe('module folder display interactions', () => {
         expect(target.querySelector('[data-folder-actions="other"]')).toBeNull()
     })
 
+    it('lets folderCount replace the header count with the shown rows at every depth (2026-11-20)', async () => {
+        const folderCount = createRawSnippet<[PromptPresetFolder, number[]]>((getFolder, getShown) => ({
+            render: () => `<span data-folder-count="${getFolder().id}">${getShown().length}</span>`,
+        }))
+        const { target } = await renderList({ ...nestedListProps, folderCount, searchQuery: 'cartridge' })
+        expect(target.querySelector('[data-folder-count="top"]')?.textContent).toBe('3')
+        expect(target.querySelector('[data-folder-count="child"]')?.textContent).toBe('2')
+    })
+
     it('keeps touch previews outside the nested item lists and their containing blocks', async () => {
         const { default: RealSortable } = await vi.importActual<{ default: typeof Sortable }>('sortablejs')
         mocks.sortableCreate.mockImplementation((element, options) => RealSortable.create(element, options))

@@ -655,6 +655,11 @@
                 onclick={(event) => { event.stopPropagation(); toggleFolderGlobal(shownIndexes) }}
             ><Globe size={17}/></button>
         {/snippet}
+        {#snippet folderCount(_folder, shownIndexes)}
+            <!-- On / all, as the chat module menu shows it (the user's request, 2026-11-20: "N/47"); the same count as the globe. -->
+            {@const activeCount = shownIndexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
+            <span class="text-xs {activeCount > 0 ? 'text-emerald-500' : 'text-textcolor2'}">{activeCount > 0 ? `${activeCount}/` : ''}{shownIndexes.length}</span>
+        {/snippet}
         {#snippet folderMenuItems(_folder, indexes)}
             {#if openBot && indexes.length > 0}
                 {@const ids = folderModuleIds(indexes)}

@@ -111,6 +111,8 @@
         showItemCount?: boolean;
         /** Optional controls rendered in a folder header before its count/menu. */
         folderActions?: Snippet<[PromptPresetFolder, number[], number[]]>;
+        /** Replaces a folder header's item count, given the shown rows at every depth. */
+        folderCount?: Snippet<[PromptPresetFolder, number[]]>;
         /** Optional status rendered before the folder title. */
         folderLeadingActions?: Snippet<[PromptPresetFolder, number[]]>;
         /** Extra entries in a folder's ⋮ menu, given the folder's item indexes. */
@@ -161,6 +163,7 @@
         subActions,
         showItemCount = false,
         folderActions,
+        folderCount,
         folderLeadingActions,
         folderMenuItems,
         rowContextMenu = false,
@@ -555,6 +558,7 @@
     {#if folder}
         {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
         {@const children = (childGroupsByParent.get(folder.id) ?? []).filter((child) => !query || groupHasMatches(child))}
+        {@const shownIndexes = [...new Set([...group.indexes, ...nestedIndexesOf(group)])]}
         <!-- A folder shown inside another has no data-folder-key: only top-level folders drag. -->
         <div data-folder-key={nested ? undefined : folder.id} data-nested-folder={nested ? folder.id : undefined} class="rounded-md border border-darkborderc bg-darkbg">
             <!-- In a list under 20rem the row icons, gaps and the name took ~155px,
@@ -572,8 +576,8 @@
                 {@render folderLeadingActions?.(folder, group.indexes)}
                 <span class="truncate grow @max-xs/folders:line-clamp-2 @max-xs/folders:whitespace-normal @max-xs/folders:break-keep @max-xs/folders:[overflow-wrap:anywhere]" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
                 <!-- The folder globe covers shown rows at every depth (the user's request, 2026-11-20). -->
-                {@render folderActions?.(folder, group.indexes, [...new Set([...group.indexes, ...nestedIndexesOf(group)])])}
-                <span class="text-xs text-textcolor2">{groupItemCount(group)}</span>
+                {@render folderActions?.(folder, group.indexes, shownIndexes)}
+                {#if folderCount}{@render folderCount(folder, shownIndexes)}{:else}<span class="text-xs text-textcolor2">{groupItemCount(group)}</span>{/if}
                 {@render folderMenu(folder, group.indexes)}
             </div>
             <div data-folder-container={folder.id} class:hidden={isCollapsed}>
