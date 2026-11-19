@@ -262,10 +262,19 @@ export function rmCharEmotion(charId:number, emotionId:number) {
 
 export async function exportChat(page:number){
     try {
-
-        const mode = await alertSelect(['Export as JSON', "Export as TXT", "Export as HTML File", "Export as HTML Embed"])
-        const doTranslate = (mode === '2' || mode === '3') ? (await alertSelect([language.translateContent, language.doNotTranslate])) === '0' : false
-        const anonymous = (mode === '2' || mode === '3') ? ((await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1') : false
+        // CHAT-EXPORT-CANCEL: every export choice can be cancelled.
+        const mode = await alertSelect(['Export as JSON', "Export as TXT", "Export as HTML File", "Export as HTML Embed", language.cancel])
+        if (!['0', '1', '2', '3'].includes(mode)) return
+        let doTranslate = false
+        let anonymous = false
+        if (mode === '2' || mode === '3') {
+            const translateChoice = await alertSelect([language.translateContent, language.doNotTranslate, language.cancel])
+            if (translateChoice !== '0' && translateChoice !== '1') return
+            doTranslate = translateChoice === '0'
+            const nameChoice = await alertSelect([language.includePersonaName, language.hidePersonaName, language.cancel])
+            if (nameChoice !== '0' && nameChoice !== '1') return
+            anonymous = nameChoice === '1'
+        }
         const selectedID = get(selectedCharID)
         const db = getDatabase()
         const char = db.characters[selectedID]

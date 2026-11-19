@@ -4134,6 +4134,37 @@
       "regressionTests": []
     },
     {
+      "id": "MODULE-CHARX-ROUTING",
+      "title": "모듈 이름의 CHARX는 어느 가져오기 경로에서도 모듈로 처리",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/shareTargetRouting.ts",
+        "src/ts/dropImportRouting.ts",
+        "src/ts/characterCards.ts",
+        "src/ts/characters.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/shareTargetRouting.ts", "contains": "MODULE-CHARX-ROUTING: a *.module.charx file always imports as a module." },
+        { "file": "src/ts/characterCards.ts", "contains": "isModuleCharxName(f.name)" }
+      ],
+      "regressionTests": [
+        "src/ts/dropImportRouting.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-EXPORT-CANCEL",
+      "title": "채팅 내보내기 형식·HTML 선택 취소",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/characters.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characters.ts", "contains": "CHAT-EXPORT-CANCEL: every export choice can be cancelled." },
+        { "file": "src/ts/characters.ts", "contains": "if (translateChoice !== '0' && translateChoice !== '1') return" }
+      ],
+      "regressionTests": []
+    },
+    {
       "id": "BUSY-CONTROL-NOTICE",
       "title": "답을 쓰는 중에는 다시 생성·스와이프 삭제를 흐리게 보이고, 누르면 확인창 없이 막혔다고 알리기",
       "criticality": "core-ux",

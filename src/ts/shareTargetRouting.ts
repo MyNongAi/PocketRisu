@@ -3,6 +3,11 @@ export type SharedImportKind = 'character' | 'module' | 'preset' | 'plugin'
 /** Which import button started the import: it settles files both importers read. */
 export type ImportOrigin = 'character' | 'module' | 'preset'
 
+// MODULE-CHARX-ROUTING: a *.module.charx file always imports as a module.
+export function isModuleCharxName(name: string): boolean {
+    return name.toLowerCase().endsWith('.module.charx')
+}
+
 export function classifySharedImport(name: string, type = '', origin: ImportOrigin = 'character'): SharedImportKind | null {
     const lowerName = name.toLowerCase()
     const lowerType = type.toLowerCase()
@@ -11,7 +16,7 @@ export function classifySharedImport(name: string, type = '', origin: ImportOrig
     // a .charx can be either. The export's own name settles it; otherwise a
     // .charx or .json opened from the module page is read as a module, the
     // way that page's own file picker reads them.
-    if (lowerName.endsWith('.module.charx')) return 'module'
+    if (isModuleCharxName(name)) return 'module'
     if (origin === 'module' && (lowerName.endsWith('.charx') || lowerName.endsWith('.json'))) return 'module'
     if (lowerName.endsWith('.risup') || lowerName.endsWith('.risupreset')) return 'preset'
     // From the prompt preset page a .json (or .preset) is a preset, the way
@@ -38,5 +43,5 @@ export function classifySharedImport(name: string, type = '', origin: ImportOrig
  */
 export function importableAsEither(name: string): boolean {
     const lowerName = name.toLowerCase()
-    return (lowerName.endsWith('.charx') && !lowerName.endsWith('.module.charx')) || lowerName.endsWith('.json')
+    return (lowerName.endsWith('.charx') && !isModuleCharxName(name)) || lowerName.endsWith('.json')
 }

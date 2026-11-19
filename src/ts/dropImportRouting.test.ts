@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { classifyDroppedImport } from './dropImportRouting'
+import { isModuleCharxName } from './shareTargetRouting'
+
+describe('isModuleCharxName', () => {
+    it('only matches the module CHARX suffix, regardless of case', () => {
+        expect(isModuleCharxName('a.module.charx')).toBe(true)
+        expect(isModuleCharxName('A.MODULE.CHARX')).toBe(true)
+        expect(isModuleCharxName('a.charx')).toBe(false)
+        expect(isModuleCharxName('module.charx.png')).toBe(false)
+    })
+})
 
 describe('classifyDroppedImport', () => {
     it('always treats RISUM as a module', () => {
@@ -16,6 +26,8 @@ describe('classifyDroppedImport', () => {
 
     it('treats CHARX as a character on the general app surface', () => {
         expect(classifyDroppedImport('card.charx')).toBe('character')
+        expect(classifyDroppedImport('card.module.charx')).toBe('module')
+        expect(classifyDroppedImport('CARD.MODULE.CHARX')).toBe('module')
     })
 
     it('treats CHARX as a module on the module catalog surface', () => {

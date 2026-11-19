@@ -21,6 +21,7 @@ import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
 import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "./importProgress"
 import { isCharxFileName, type CharxDestination } from "./charxPreflight"
 import { planLargeCharxImport } from "./largeCharxImport"
+import { isModuleCharxName } from './shareTargetRouting'
 import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "./importTransaction"
 import { organizeImportedCharacterSimilarity } from "./process/similarityFolders"
 import { creatorsOf, placeImportedByCreator } from "./creatorFolders"
@@ -91,16 +92,20 @@ export async function importCharacter() {
         }
 
         const result = await runImportBatch(files, async (f, report) => {
-            await importCharacterProcess({
-                name: f.name,
-                data: f,
-                onProgress: report,
-                suppressSuccess: true,
-            })
-            checkCharOrder()
+            if (isModuleCharxName(f.name)) {
+                await importModuleFile({ name: f.name, data: f }, { onProgress: report, suppressSuccess: true })
+            } else {
+                await importCharacterProcess({
+                    name: f.name,
+                    data: f,
+                    onProgress: report,
+                    suppressSuccess: true,
+                })
+                checkCharOrder()
+            }
         })
         if(result.completed > 0){
-            notifySuccess(`${result.completed}/${result.total} ${language.importedCharacter}`)
+            notifySuccess(`${result.completed}/${result.total} ${files.some((file) => isModuleCharxName(file.name)) ? language.successImport : language.importedCharacter}`)
         }
     } catch (error) {
         notifyError(error)
@@ -157,6 +162,15 @@ async function importLargeCharx(f: CharacterImportFile, destination: CharxDestin
 export async function importCharacterProcess<T extends boolean = false>(f:CharacterImportFile & {
     returnCharacter?:T
 }):Promise<T extends true ? character | number | null : number | null>{
+    if (!f.returnCharacter && f.charxGuard !== false && isModuleCharxName(f.name)) {
+        const module = await importModuleFile({ name: f.name, data: f.data as Uint8Array | File }, {
+            suppressSuccess: f.suppressSuccess,
+            onProgress: f.onProgress,
+            importScope: f.importScope,
+        })
+        f.onImportedAsModule?.(module)
+        return null as any
+    }
     // PocketRisu: a large CHARX first asks bot / module / cancel. Callers that
     // need the character object itself (returnCharacter) decided already.
     if(!f.importScope && !f.returnCharacter && f.charxGuard !== false && isCharxFileName(f.name)){
@@ -545,6 +559,9 @@ export const showRealmInfoStore:Writable<null|hubType> = writable(null)
 
 // Returns false when the file type is not importable or the import failed.
 export async function importFileByName(name:string, data:Uint8Array):Promise<boolean> {
+    if(isModuleCharxName(name)){
+        return Boolean(await importModuleFile({ name, data }))
+    }
     if(name.endsWith('.charx') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')){
         // importCharacterProcess returns the last index even when the user
         // declines the card, so count the characters instead.

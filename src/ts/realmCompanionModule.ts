@@ -21,6 +21,7 @@ import { importModuleFile } from './process/moduleImport'
 import { inspectProtonShare, isProtonPasswordRequired, type ProtonInspectResult } from './protonShareClient'
 import type { ProtonSourceRecord } from './protonSource'
 import { getDatabase } from './storage/database.svelte'
+import { isModuleCharxName } from './shareTargetRouting'
 
 const PROTON_HOSTS = new Set(['drive.proton.me', 'drive.proton.ch'])
 
@@ -59,7 +60,7 @@ export function findProtonShareLinks(text: string): string[] {
  */
 export function isCompanionModuleFile(name: string): boolean {
     const lower = name.toLocaleLowerCase()
-    return lower.endsWith('.risum') || lower.endsWith('.module.charx')
+    return lower.endsWith('.risum') || isModuleCharxName(name)
 }
 
 /** Adds module ids to a character's own modules (character.modules), keeping order and no duplicates. */

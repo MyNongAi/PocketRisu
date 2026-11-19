@@ -1,4 +1,5 @@
 import { planCharxImport, type CharxDestination, type CharxImportPlan } from './charxPreflight'
+import { isModuleCharxName } from './shareTargetRouting'
 
 /**
  * planCharxImport for the bot and module importers. A large CHARX is no
@@ -13,6 +14,6 @@ export function planLargeCharxImport(
     data: Uint8Array | Blob | ReadableStream<Uint8Array>,
     preferred: CharxDestination,
 ): Promise<CharxImportPlan> {
-    const destination: CharxDestination = name.toLowerCase().endsWith('.module.charx') ? 'module' : preferred
+    const destination: CharxDestination = isModuleCharxName(name) ? 'module' : preferred
     return planCharxImport(name, data, async () => destination)
 }
