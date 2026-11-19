@@ -5,6 +5,8 @@ export const languageKorean = {
   geminiRelayOff: "끄기",
   geminiRelayUs: "미국 중계",
   geminiRelayJp: "일본 중계",
+  geminiRelayRotate: "자동 회전",
+  geminiRelayRotateUrls: "회전할 중계 주소",
   geminiRelayLaptop: "노트북 경유",
   geminiRelayUsUrl: "미국 중계 주소",
   geminiRelayJpUrl: "일본 중계 주소",

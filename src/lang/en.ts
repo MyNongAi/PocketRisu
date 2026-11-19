@@ -779,6 +779,8 @@ export const languageEnglish = {
     geminiRelayOff: "Off",
     geminiRelayUs: "US relay",
     geminiRelayJp: "Japan relay",
+    geminiRelayRotate: "Rotate on failure",
+    geminiRelayRotateUrls: "Relay URLs to rotate through",
     geminiRelayLaptop: "Through the laptop server",
     geminiRelayUsUrl: "US relay URL",
     geminiRelayJpUrl: "Japan relay URL",

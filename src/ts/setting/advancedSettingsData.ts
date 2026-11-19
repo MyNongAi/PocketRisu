@@ -92,12 +92,14 @@ export const advancedRequestItems: SettingItem[] = [
             { value: 'off', labelKey: 'geminiRelayOff' },
             { value: 'us', labelKey: 'geminiRelayUs' },
             { value: 'jp', labelKey: 'geminiRelayJp' },
+            { value: 'rotate', labelKey: 'geminiRelayRotate' },
             { value: 'laptop', labelKey: 'geminiRelayLaptop' },
         ] }
     },
     { id: 'adv.geminiRelayUsUrl', type: 'text', labelKey: 'geminiRelayUsUrl', bindKey: 'geminiRelayUsUrl', condition: (ctx) => ctx.db.geminiRelayMode === 'us' || ctx.db.geminiRelayMode === 'jp' },
     { id: 'adv.geminiRelayJpUrl', type: 'text', labelKey: 'geminiRelayJpUrl', bindKey: 'geminiRelayJpUrl', condition: (ctx) => ctx.db.geminiRelayMode === 'us' || ctx.db.geminiRelayMode === 'jp' },
-    { id: 'adv.geminiRelayKey', type: 'text', labelKey: 'geminiRelayKey', bindKey: 'geminiRelayKey', condition: (ctx) => ctx.db.geminiRelayMode === 'us' || ctx.db.geminiRelayMode === 'jp', options: { hideText: true } },
+    { id: 'adv.geminiRelayRotateUrls', type: 'textarea', labelKey: 'geminiRelayRotateUrls', bindKey: 'geminiRelayRotateUrls', helpKey: 'geminiRelayRotateUrls', condition: (ctx) => ctx.db.geminiRelayMode === 'rotate' },
+    { id: 'adv.geminiRelayKey', type: 'text', labelKey: 'geminiRelayKey', bindKey: 'geminiRelayKey', condition: (ctx) => ctx.db.geminiRelayMode === 'us' || ctx.db.geminiRelayMode === 'jp' || ctx.db.geminiRelayMode === 'rotate', options: { hideText: true } },
     {
         id: 'adv.visionQual', type: 'select', fallbackLabel: 'Vision Quality', bindKey: 'gptVisionQuality',
         helpKey: 'gptVisionQuality',

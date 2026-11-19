@@ -78,6 +78,7 @@ import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
 import { chatNeedsUpload, classifyChatSaveIntent, retainConfirmedChats } from './storage/chatSaveIntent'
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { isGeminiRelayTarget, resolveGeminiRelay, routeGeminiThroughLaptop } from "./process/request/geminiRelay";
+import { geminiRotationRoutes, runGeminiRotation } from "./process/request/geminiRelayRotation";
 import { waitForGeminiRelayDefaults } from "./process/request/geminiRelayDefaults";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getInlineImageMimeType } from "./media/imageMime";
@@ -3588,7 +3589,7 @@ export async function fetchNative(url: string, arg: FetchNativeArgs): Promise<Re
 async function fetchNativeRaw(url: string, arg: FetchNativeArgs, hooks?: {
     onRealBody?: (body: string) => void,
     onRoute?: (route: RequestLogRoute) => void,
-}): Promise<Response> {
+}, geminiNormalPathOnly = false): Promise<Response> {
     const useInterceptor = !!arg.interceptor
     if (arg.body === undefined && (arg.method === 'POST' || arg.method === 'PUT')) {
         throw new Error('Body is required for POST and PUT requests')
@@ -3638,6 +3639,34 @@ async function fetchNativeRaw(url: string, arg: FetchNativeArgs, hooks?: {
     if (isNodeServer && isGeminiRelayTarget(url) && (db.geminiRelayMode === 'us' || db.geminiRelayMode === 'jp') &&
         (!db.geminiRelayKey || (db.geminiRelayMode === 'jp' ? !db.geminiRelayJpUrl : !db.geminiRelayUsUrl))) {
         await waitForGeminiRelayDefaults()
+    }
+    // GEMINI-RELAY-ROTATE: a refused Gemini request moves on to the next route at once.
+    if (!geminiNormalPathOnly && isNodeServer && db.geminiRelayMode === 'rotate' && isGeminiRelayTarget(url)) {
+        await waitForGeminiRelayDefaults()
+        const routes = geminiRotationRoutes(url, db)
+        if (routes.length > 1) {
+            let finalRoute: RequestLogRoute | undefined
+            try {
+                // The normal route reruns this function on the already-built body
+                // (bytes, so interceptors do not run twice) with rotation off.
+                return await runGeminiRotation(routes, () => !!requestSignal?.aborted, (route) => {
+                    if (route.kind === 'normal') {
+                        return fetchNativeRaw(url, { ...arg, body: realBody, signal: requestSignal },
+                            { onRoute: (r) => { finalRoute = r } }, true)
+                    }
+                    finalRoute = 'relay'
+                    return fetch(route.url, {
+                        body: realBody as any,
+                        headers: { ...headers, ...route.headers },
+                        method: arg.method,
+                        signal: requestSignal,
+                    })
+                })
+            } finally {
+                if (finalRoute) hooks?.onRoute?.(finalRoute)
+                timeoutSignal.cleanup()
+            }
+        }
     }
     const relay = resolveGeminiRelay(url, db)
     let throughProxy = !db.usePlainFetch

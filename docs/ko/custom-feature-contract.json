@@ -33,6 +33,8 @@
         "server/node/gemini-relay-defaults.cjs",
         "gemini-relay.local.example.json",
         "src/ts/process/request/geminiRelay.ts",
+        "src/ts/process/request/geminiRelayRotation.ts",
+        "src/ts/process/request/geminiRelayRotation.test.ts",
         "src/ts/process/request/geminiRelayDefaults.ts",
         "src/ts/globalApi.svelte.ts",
         "src/ts/bootstrap.ts",
@@ -42,13 +44,15 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY: Gemini requests go through the chosen relay." },
-        { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY-LAPTOP: Gemini requests can go out through the laptop server." }
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY-LAPTOP: Gemini requests can go out through the laptop server." },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY-ROTATE: a refused Gemini request moves on to the next route at once." }
       ],
       "regressionTests": [
         "tools/gemini-relay/server.test.ts",
         "tools/gemini-relay/worker.test.ts",
         "server/node/gemini-relay-defaults.test.ts",
-        "src/ts/process/request/geminiRelay.test.ts"
+        "src/ts/process/request/geminiRelay.test.ts",
+        "src/ts/process/request/geminiRelayRotation.test.ts"
       ]
     },
     {

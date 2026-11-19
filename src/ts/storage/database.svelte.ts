@@ -654,6 +654,7 @@ export function normalizeDatabase(data:Database){
     data.geminiRelayMode ??= 'off'
     data.geminiRelayUsUrl ??= ''
     data.geminiRelayJpUrl ??= ''
+    data.geminiRelayRotateUrls ??= ''
     data.geminiRelayKey ??= ''
     data.vertexRegion ??= 'global'
     data.seperateParametersEnabled ??= false
@@ -1524,9 +1525,10 @@ export interface Database{
     systemContentReplacement:string
     systemRoleReplacement:'user'|'assistant'
     vertexPrivateKey: string
-    geminiRelayMode?: 'off' | 'us' | 'jp' | 'laptop'
+    geminiRelayMode?: 'off' | 'us' | 'jp' | 'laptop' | 'rotate'
     geminiRelayUsUrl?: string
     geminiRelayJpUrl?: string
+    geminiRelayRotateUrls?: string
     geminiRelayKey?: string
     vertexClientEmail: string
     vertexAccessToken: string

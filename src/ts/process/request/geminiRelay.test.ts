@@ -45,6 +45,7 @@ describe('Gemini relay selection', () => {
         expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'jp' })).toMatchObject({ url: db.geminiRelayJpUrl })
         expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'off' })).toBeNull()
         expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'laptop' })).toBeNull()
+        expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'rotate' })).toBeNull()
         expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: '' })).toBeNull()
         expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: 'http://remote.example' })).toBeNull()
         expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: 'http://127.0.0.1:8080' })).not.toBeNull()
