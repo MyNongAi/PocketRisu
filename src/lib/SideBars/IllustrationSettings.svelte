@@ -2,6 +2,9 @@
     // The NovelAI box starts folded and stays as it was left for the session
     // (the user's request, 2026-10-28).
     let naiOpen = $state(false)
+    // The fields from 그리는 때 to 참고할 앞 메시지 수 fold the same way
+    // (the user's request, 2026-11-20: "노벨ai값처럼 드롭다운으로").
+    let basicsOpen = $state(false)
 </script>
 
 <script lang="ts">
@@ -124,6 +127,13 @@
         `${language.illustrationNaiSteps} ${naiValue('steps')}`,
         `CFG ${naiValue('scale')}`,
     ].join(' · '))
+    // Shown under the folded 그리기 설정 title (2026-11-20): when, how many, which ratio.
+    const shortLabel = (text: string) => text.replace(/\s*\(.*\)\s*$/, '')
+    let basicsSummary = $derived([
+        settings.trigger === 'button' ? language.illustrationTriggerButton : language.illustrationTriggerAuto,
+        shortLabel(({ '0-1': language.illustrationCount01, '1': language.illustrationCount1, '1-2': language.illustrationCount12, '1-3': language.illustrationCount13 } as Record<string, string>)[settings.count] ?? settings.count),
+        shortLabel(({ portrait: language.illustrationRatioPortrait, landscape: language.illustrationRatioLandscape, square: language.illustrationRatioSquare } as Record<string, string>)[settings.ratio] ?? settings.ratio),
+    ].join(' · '))
     const presetValue = (value: unknown) => language.illustrationNaiPresetValue.replace('{value}', typeof value === 'boolean' ? (value ? 'ON' : 'OFF') : String(value))
 
     // Where a new preset goes: the 🎨 module (every bot can pick it), or a
@@ -187,62 +197,74 @@
         {/if}
 
         <div class="flex flex-col gap-3">
-            <div class="flex flex-col gap-1">
-                <span>{language.illustrationTrigger}</span>
-                <SelectInput value={settings.trigger} onchange={(e) => set('trigger', e.currentTarget.value as any)}>
-                    <OptionInput value="auto">{language.illustrationTriggerAuto}</OptionInput>
-                    <OptionInput value="button">{language.illustrationTriggerButton}</OptionInput>
-                </SelectInput>
-            </div>
-            <div class="flex flex-col gap-1">
-                <span>{language.illustrationCount}</span>
-                <SelectInput value={settings.count} onchange={(e) => set('count', e.currentTarget.value as any)}>
-                    <OptionInput value="0-1">{language.illustrationCount01}</OptionInput>
-                    <OptionInput value="1">{language.illustrationCount1}</OptionInput>
-                    <OptionInput value="1-2">{language.illustrationCount12}</OptionInput>
-                    <OptionInput value="1-3">{language.illustrationCount13}</OptionInput>
-                </SelectInput>
-            </div>
-            <div class="flex flex-col gap-1">
-                <span>{language.illustrationPosition}</span>
-                <SelectInput value={settings.position} onchange={(e) => set('position', e.currentTarget.value as any)}>
-                    <OptionInput value="auto">{language.illustrationPositionAuto}</OptionInput>
-                    <OptionInput value="top">{language.illustrationPositionTop}</OptionInput>
-                    <OptionInput value="middle">{language.illustrationPositionMiddle}</OptionInput>
-                    <OptionInput value="bottom">{language.illustrationPositionBottom}</OptionInput>
-                </SelectInput>
-            </div>
-            <div class="flex flex-col gap-1">
-                <span>{language.illustrationRatio}</span>
-                <SelectInput value={settings.ratio} onchange={(e) => set('ratio', e.currentTarget.value as any)}>
-                    <OptionInput value="portrait">{language.illustrationRatioPortrait}</OptionInput>
-                    <OptionInput value="landscape">{language.illustrationRatioLandscape}</OptionInput>
-                    <OptionInput value="square">{language.illustrationRatioSquare}</OptionInput>
-                </SelectInput>
-            </div>
-            <div class="flex flex-col gap-1">
-                <span>{language.illustrationMaxCharacters}</span>
-                <SelectInput value={String(settings.maxCharacters)} onchange={(e) => set('maxCharacters', Number(e.currentTarget.value))}>
-                    <OptionInput value="1">1</OptionInput>
-                    <OptionInput value="2">2</OptionInput>
-                    <OptionInput value="3">3</OptionInput>
-                </SelectInput>
-            </div>
-            <!-- What goes along to the auxiliary model (the user's toggle, 2026-10-28). -->
-            <div class="flex flex-col gap-1" data-illustration-lore>
-                <span>{language.illustrationLore}</span>
-                <SelectInput value={settings.lore} onchange={(e) => set('lore', e.currentTarget.value as any)}>
-                    <OptionInput value="scene">{language.illustrationLoreScene}</OptionInput>
-                    <OptionInput value="all">{language.illustrationLoreAll}</OptionInput>
-                </SelectInput>
-            </div>
-            <div class="flex flex-col gap-1">
-                <span>{language.illustrationContextCount}</span>
-                <SelectInput value={String(settings.contextCount)} onchange={(e) => set('contextCount', Number(e.currentTarget.value))}>
-                    {#each [0, 1, 2, 3, 4, 5] as count (count)}
-                        <OptionInput value={String(count)}>{count}</OptionInput>
-                    {/each}
-                </SelectInput>
+            <!-- 그리는 때 … 참고할 앞 메시지 수, folded like the NovelAI values
+                 with a one-line summary (the user's request, 2026-11-20). -->
+            {#snippet basicsTitle()}
+                <span class="flex min-w-0 flex-col leading-tight">
+                    <span class="text-sm font-semibold text-textcolor">{language.illustrationBasics}</span>
+                    {#if !basicsOpen}<span class="truncate text-xs font-normal text-textcolor2" data-illustration-basics-summary>{basicsSummary}</span>{/if}
+                </span>
+            {/snippet}
+            <div data-illustration-basics>
+            <ShAccordion bind:open={basicsOpen} trigger={basicsTitle} class="w-full" bodyClass="flex flex-col gap-1.5 text-xs">
+                <div class="flex flex-col gap-1">
+                    <span class="text-textcolor2">{language.illustrationTrigger}</span>
+                    <SelectInput size="sm" value={settings.trigger} onchange={(e) => set('trigger', e.currentTarget.value as any)}>
+                        <OptionInput value="auto">{language.illustrationTriggerAuto}</OptionInput>
+                        <OptionInput value="button">{language.illustrationTriggerButton}</OptionInput>
+                    </SelectInput>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-textcolor2">{language.illustrationCount}</span>
+                    <SelectInput size="sm" value={settings.count} onchange={(e) => set('count', e.currentTarget.value as any)}>
+                        <OptionInput value="0-1">{language.illustrationCount01}</OptionInput>
+                        <OptionInput value="1">{language.illustrationCount1}</OptionInput>
+                        <OptionInput value="1-2">{language.illustrationCount12}</OptionInput>
+                        <OptionInput value="1-3">{language.illustrationCount13}</OptionInput>
+                    </SelectInput>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-textcolor2">{language.illustrationPosition}</span>
+                    <SelectInput size="sm" value={settings.position} onchange={(e) => set('position', e.currentTarget.value as any)}>
+                        <OptionInput value="auto">{language.illustrationPositionAuto}</OptionInput>
+                        <OptionInput value="top">{language.illustrationPositionTop}</OptionInput>
+                        <OptionInput value="middle">{language.illustrationPositionMiddle}</OptionInput>
+                        <OptionInput value="bottom">{language.illustrationPositionBottom}</OptionInput>
+                    </SelectInput>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-textcolor2">{language.illustrationRatio}</span>
+                    <SelectInput size="sm" value={settings.ratio} onchange={(e) => set('ratio', e.currentTarget.value as any)}>
+                        <OptionInput value="portrait">{language.illustrationRatioPortrait}</OptionInput>
+                        <OptionInput value="landscape">{language.illustrationRatioLandscape}</OptionInput>
+                        <OptionInput value="square">{language.illustrationRatioSquare}</OptionInput>
+                    </SelectInput>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-textcolor2">{language.illustrationMaxCharacters}</span>
+                    <SelectInput size="sm" value={String(settings.maxCharacters)} onchange={(e) => set('maxCharacters', Number(e.currentTarget.value))}>
+                        <OptionInput value="1">1</OptionInput>
+                        <OptionInput value="2">2</OptionInput>
+                        <OptionInput value="3">3</OptionInput>
+                    </SelectInput>
+                </div>
+                <!-- What goes along to the auxiliary model (the user's toggle, 2026-10-28). -->
+                <div class="flex flex-col gap-1" data-illustration-lore>
+                    <span class="text-textcolor2">{language.illustrationLore}</span>
+                    <SelectInput size="sm" value={settings.lore} onchange={(e) => set('lore', e.currentTarget.value as any)}>
+                        <OptionInput value="scene">{language.illustrationLoreScene}</OptionInput>
+                        <OptionInput value="all">{language.illustrationLoreAll}</OptionInput>
+                    </SelectInput>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-textcolor2">{language.illustrationContextCount}</span>
+                    <SelectInput size="sm" value={String(settings.contextCount)} onchange={(e) => set('contextCount', Number(e.currentTarget.value))}>
+                        {#each [0, 1, 2, 3, 4, 5] as count (count)}
+                            <OptionInput value={String(count)}>{count}</OptionInput>
+                        {/each}
+                    </SelectInput>
+                </div>
+            </ShAccordion>
             </div>
             <div class="flex items-center justify-between gap-2 min-h-10">
                 <span>{language.illustrationNsfw}</span>
@@ -300,7 +322,6 @@
                     onchange={(e) => { void takeImages(Array.from(e.currentTarget.files ?? [])); e.currentTarget.value = '' }}
                 />
             </div>
-            <span class="text-xs text-textcolor2">{language.illustrationPresetHint}</span>
             {#if settings.preset && !chosen}
                 <span class="text-xs text-yellow-500">{language.illustrationPresetMissing}</span>
             {/if}

@@ -3621,6 +3621,7 @@
         { "file": "src/ts/process/illustrationRun.ts", "contains": "const lore = (settings.lore === 'all'" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-lore" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-common-note" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "<ShAccordion bind:open={basicsOpen} trigger={basicsTitle}" },
         { "file": "src/ts/process/auxLorebook.ts", "contains": "if (entry.nodeOnlyIllustration || isAutoIllustration(entry)) return 'illustration'" },
         { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "data-lore-auto-illustration" },
         { "file": "src/ts/process/illustrationRun.ts", "contains": "commonNote: parse(DBState.db.nodeOnlyIllustrationNote ?? '')," },

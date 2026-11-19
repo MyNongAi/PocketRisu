@@ -1308,7 +1308,7 @@ export const languageKorean = {
   illustrationRatioSquare: "정사각 (1024×1024)",
   illustrationPreset: "화풍 프리셋",
   illustrationPresetNone: "없음 (장면 태그만)",
-  illustrationPresetHint: "로어북의 '프리셋 X' 폴더(Positive, Negative, NAI 항목)입니다. 🎨 삽화 모듈의 것은 모든 봇이(모듈을 켜지 않아도), 봇 로어북의 것은 그 봇만, 다른 모듈의 것은 그 모듈을 켠 봇이 씁니다. 새 프리셋과 이미지에서 만든 프리셋은 🎨 삽화 모듈에 들어갑니다. Positive의 {prompt} 자리에 장면 태그가 들어가고, 한 항목짜리와 라이트보드 형식도 그대로 읽습니다.",
+  illustrationBasics: "그리기 설정",
   illustrationNewPreset: "새 프리셋",
   illustrationNoImageProvider: "이미지 생성이 설정되어 있지 않아요. 설정 › 기타 봇 › 이미지 생성에서 NovelAI를 골라 주세요.",
   illustrationNotNovelAI: "NovelAI가 아닌 이미지 생성은 비율·인물 나누기 없이 그 설정대로 그립니다.",

@@ -128,3 +128,40 @@ describe('the NovelAI box in the 🎨 settings', () => {
         expect(again.trigger.getAttribute('aria-expanded')).toBe('false')
     })
 })
+
+// The user's request (2026-11-20): 그리는 때 … 참고할 앞 메시지 수 fold like
+// the NovelAI values, and the long preset note under the presets is gone.
+describe('the drawing box in the 🎨 settings', () => {
+    it('starts folded with when / how many / ratio, opens to the seven fields, and stays as left', async () => {
+        DBState.db.characters[0].nodeOnlyIllustration = { enabled: true, trigger: 'button', count: '1-2', ratio: 'landscape' }
+        const target = document.createElement('div')
+        document.body.appendChild(target)
+        mounted.push(mount(IllustrationSettings, { target }))
+        await settle()
+        const box = target.querySelector('[data-illustration-basics]') as HTMLElement
+        const trigger = box.querySelector('button[aria-expanded]') as HTMLButtonElement
+        const region = box.querySelector('[role=region]') as HTMLElement
+        const summary = () => box.querySelector('[data-illustration-basics-summary]')?.textContent ?? null
+
+        expect(trigger.getAttribute('aria-expanded')).toBe('false')
+        expect(region.getAttribute('aria-hidden')).toBe('true')
+        const short = (text: string) => text.replace(/\s*\(.*\)\s*$/, '')
+        expect(summary()).toBe([language.illustrationTriggerButton, short(language.illustrationCount12), short(language.illustrationRatioLandscape)].join(' · '))
+        expect(summary()).not.toContain('(')
+        expect(region.querySelectorAll('select').length).toBe(7)
+        expect(region.querySelector('[data-illustration-lore]')).toBeTruthy()
+        expect(target.textContent).not.toContain('Positive, Negative, NAI')
+
+        trigger.click()
+        await settle()
+        expect(trigger.getAttribute('aria-expanded')).toBe('true')
+        expect(summary()).toBeNull()
+        unmount(mounted.pop()!)
+
+        const again = document.createElement('div')
+        document.body.appendChild(again)
+        mounted.push(mount(IllustrationSettings, { target: again }))
+        await settle()
+        expect(again.querySelector('[data-illustration-basics] button[aria-expanded]')?.getAttribute('aria-expanded')).toBe('true')
+    })
+})

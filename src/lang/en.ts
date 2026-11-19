@@ -1219,7 +1219,7 @@ export const languageEnglish = {
     illustrationRatioSquare: "Square (1024×1024)",
     illustrationPreset: "Style preset",
     illustrationPresetNone: "None (scene tags only)",
-    illustrationPresetHint: "\"프리셋 X\" lorebook folders (Positive, Negative and NAI entries): the 🎨 illustration module's for every bot (on or off), a bot's for that bot, another module's for every bot with it on. New presets and presets from images go into the 🎨 module. The scene tags go where {prompt} is in Positive; one-entry presets and Lightboard's formats read as they are.",
+    illustrationBasics: "Drawing",
     illustrationNewPreset: "New preset",
     illustrationNoImageProvider: "No image generation is set. Choose NovelAI in Settings › Other bots › Image generation.",
     illustrationNotNovelAI: "Image generation other than NovelAI draws with its own settings, without the ratio or separate characters.",
