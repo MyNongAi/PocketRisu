@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRawSnippet, mount, tick, unmount } from 'svelte'
 import type Sortable from 'sortablejs'
+import type { PromptPresetFolder } from 'src/ts/storage/database.svelte'
 import FolderedList from './FolderedList.svelte'
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +33,28 @@ vi.mock('./GUI/ShDropdownMenuSeparator.svelte', () => import('./test/FolderedLis
 const mounted: ReturnType<typeof mount>[] = []
 const folders = [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]
 const storageKey = 'module-expanded-test'
+const nestedFolders = [
+    { id: 'top', name: 'Collection' },
+    { id: 'child', name: 'Inner', nodeOnlyParentFolderId: 'top' },
+    { id: 'deep', name: 'Deep', nodeOnlyParentFolderId: 'child' },
+    { id: 'other', name: 'Other' },
+]
+const nestedFolderActions = createRawSnippet<[PromptPresetFolder, number[], number[]]>((getFolder, getDirect, getShown) => ({
+    render: () => `<span data-folder-actions="${getFolder().id}" data-direct="${getDirect().join(',')}" data-shown="${getShown().join(',')}"></span>`,
+}))
+const nestedListProps = {
+    folders: nestedFolders,
+    itemFolderIds: ['top', 'child', 'deep', 'deep', 'other'],
+    itemSearchTexts: ['cartridge direct', 'cartridge child', 'cartridge deep', 'hidden deep', 'cartridge elsewhere'],
+    maxFolderDepth: 3,
+    folderActions: nestedFolderActions,
+}
+
+function folderActionIndexes(target: HTMLElement, folderId: string, attribute: 'direct' | 'shown') {
+    const value = target.querySelector<HTMLElement>(`[data-folder-actions="${folderId}"]`)?.dataset[attribute]
+    expect(value).toBeDefined()
+    return value ? value.split(',').map(Number) : []
+}
 
 async function renderList(overrides: Record<string, unknown> = {}) {
     const target = document.createElement('div')
@@ -60,6 +83,25 @@ afterEach(async () => {
 })
 
 describe('module folder display interactions', () => {
+    it('passes direct and nested folder rows at every depth to folderActions (2026-11-20)', async () => {
+        const { target } = await renderList(nestedListProps)
+        expect(folderActionIndexes(target, 'top', 'direct')).toEqual([0])
+        expect(folderActionIndexes(target, 'top', 'shown')).toEqual([0, 1, 2, 3])
+        expect(folderActionIndexes(target, 'child', 'shown')).toEqual([1, 2, 3])
+    })
+
+    it('passes only searched rows from the whole folder subtree to folderActions', async () => {
+        const { target } = await renderList({ ...nestedListProps, searchQuery: 'cartridge' })
+        expect(folderActionIndexes(target, 'top', 'shown')).toEqual([0, 1, 2])
+        expect(folderActionIndexes(target, 'deep', 'shown')).toEqual([2])
+    })
+
+    it('passes every descendant row when the parent folder name matches the search', async () => {
+        const { target } = await renderList({ ...nestedListProps, searchQuery: 'Collection' })
+        expect(folderActionIndexes(target, 'top', 'shown')).toEqual([0, 1, 2, 3])
+        expect(target.querySelector('[data-folder-actions="other"]')).toBeNull()
+    })
+
     it('keeps touch previews outside the nested item lists and their containing blocks', async () => {
         const { default: RealSortable } = await vi.importActual<{ default: typeof Sortable }>('sortablejs')
         mocks.sortableCreate.mockImplementation((element, options) => RealSortable.create(element, options))

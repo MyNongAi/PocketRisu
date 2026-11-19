@@ -2697,7 +2697,8 @@
       ],
       "regressionTests": [
         "src/ts/folders.test.ts",
-        "src/ts/process/linkedModuleFolder.test.ts"
+        "src/ts/process/linkedModuleFolder.test.ts",
+        "src/lib/UI/FolderedList.test.ts"
       ]
     },
     {

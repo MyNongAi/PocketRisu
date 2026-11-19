@@ -106,7 +106,7 @@
         /** Show filtered and total item counts inside the search field. */
         showItemCount?: boolean;
         /** Optional controls rendered in a folder header before its count/menu. */
-        folderActions?: Snippet<[PromptPresetFolder, number[]]>;
+        folderActions?: Snippet<[PromptPresetFolder, number[], number[]]>;
         /** Optional status rendered before the folder title. */
         folderLeadingActions?: Snippet<[PromptPresetFolder, number[]]>;
         /** Extra entries in a folder's ⋮ menu, given the folder's item indexes. */
@@ -563,7 +563,8 @@
                 {#if folder.favorite}<StarIcon size={14} class="shrink-0 text-amber-400"/>{/if}
                 {@render folderLeadingActions?.(folder, group.indexes)}
                 <span class="truncate grow @max-xs/folders:line-clamp-2 @max-xs/folders:whitespace-normal @max-xs/folders:break-keep @max-xs/folders:[overflow-wrap:anywhere]" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
-                {@render folderActions?.(folder, group.indexes)}
+                <!-- The folder globe covers shown rows at every depth (the user's request, 2026-11-20). -->
+                {@render folderActions?.(folder, group.indexes, [...new Set([...group.indexes, ...nestedIndexesOf(group)])])}
                 <span class="text-xs text-textcolor2">{groupItemCount(group)}</span>
                 {@render folderMenu(folder, group.indexes)}
             </div>
