@@ -1601,15 +1601,15 @@
       "ownerFiles": [
         "src/ts/preset/keyRotation.ts",
         "src/ts/process/request/request.ts",
-        "src/lib/Setting/Pages/Model/KeyRotationField.svelte",
-        "src/lib/UI/GUI/SchemaFormRenderer.svelte"
+        "src/lib/Setting/Pages/Model/CredentialField.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/request/request.ts", "contains": "PRESET-KEY-ROTATION: a refused attempt retries at once with the preset's next key." },
-        { "file": "src/lib/Setting/Pages/Model/KeyRotationField.svelte", "contains": "PRESET-KEY-ROTATION: extra keys for automatic rotation." }
+        { "file": "src/lib/Setting/Pages/Model/CredentialField.svelte", "contains": "PRESET-KEY-ROTATION: extra keys for automatic rotation." }
       ],
       "regressionTests": [
-        "src/ts/preset/keyRotation.test.ts"
+        "src/ts/preset/keyRotation.test.ts",
+        "src/lib/Setting/Pages/Model/CredentialField.svelte.test.ts"
       ]
     },
     {

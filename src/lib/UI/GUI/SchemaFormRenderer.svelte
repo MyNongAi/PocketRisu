@@ -11,8 +11,6 @@
     import { localizeGroupLabel } from "src/ts/preset/registry/i18n";
     import { language } from "src/lang";
     import SchemaFieldRenderer from "./SchemaFieldRenderer.svelte";
-    import KeyRotationField from "src/lib/Setting/Pages/Model/KeyRotationField.svelte";
-    import { isVertexLocationField } from "src/ts/preset/vertexLocations";
 
     interface Props {
         schema: RegistryFieldSchema[];
@@ -93,15 +91,6 @@
     }
 
     const entries = $derived(visibleEntries());
-    const rotationAnchor = $derived.by(() => {
-        if (!preset || !schema.some((f) => f?.mapsTo?.target === 'auth')) return undefined;
-        const location = uiSchema.fields.find((ui) => {
-            if (!ui) return false;
-            const field = schema.find((f) => f?.key === ui.key);
-            return !!field && isVertexLocationField(field, ui);
-        });
-        return location?.key ?? schema.find((f) => f?.mapsTo?.target === 'auth')?.key;
-    });
 
     const groupedRendered = $derived.by(() => {
         // Tolerate null/undefined group elements from a malformed/persisted
@@ -155,9 +144,6 @@
                 {/if}
                 {#each group.items as { schemaField, uiField } (uiField.key)}
                     <SchemaFieldRenderer {schemaField} {uiField} bind:userValues {preset} />
-                    {#if preset && uiField.key === rotationAnchor}
-                        <KeyRotationField {preset} />
-                    {/if}
                 {/each}
             </div>
         {/each}
