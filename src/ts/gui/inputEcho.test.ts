@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { echoedInputIndex, inputEchoKey, nextReplyIndex, previousInputIndex } from './inputEcho'
+import { echoedInputIndex, inputEchoKey, nextReplyIndex, previousInputIndex, restoresEchoEdit } from './inputEcho'
+
+describe('echo edit after a reply remount', () => {
+    it('reopens only the matching echo draft after stop', () => {
+        const draft = { scope: 'character/chat', key: 'id:input', text: 'unsaved typing', editor: 'echo' as const }
+        expect(restoresEchoEdit(draft, 'character/chat', 'id:input')).toBe(true)
+        expect(restoresEchoEdit(draft, 'another/chat', 'id:input')).toBe(false)
+        expect(restoresEchoEdit(draft, 'character/chat', 'id:other')).toBe(false)
+        expect(restoresEchoEdit({ ...draft, editor: 'original' }, 'character/chat', 'id:input')).toBe(false)
+        expect(restoresEchoEdit(null, 'character/chat', 'id:input')).toBe(false)
+    })
+})
 
 describe('echoedInputIndex', () => {
     it('shows only an input the user sent from the input box (2026-11-07)', () => {

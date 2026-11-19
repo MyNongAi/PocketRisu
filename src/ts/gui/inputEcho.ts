@@ -10,6 +10,12 @@ export type InputEchoDraft = {
     /** Character and chat, so an index key cannot leak into another chat. */
     scope: string
     text: string
+    /** The editor that owns this draft; only an echo editor reopens below a reply. */
+    editor?: 'echo' | 'original'
+}
+
+export function restoresEchoEdit(draft: InputEchoDraft | null, scope: string, key: string): boolean {
+    return draft?.editor === 'echo' && draft.scope === scope && draft.key === key
 }
 
 export const inputEchoDraft = writable<InputEchoDraft | null>(null)

@@ -35,7 +35,7 @@
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
-    import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex } from "src/ts/gui/inputEcho"
+    import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex, restoresEchoEdit } from "src/ts/gui/inputEcho"
     import { closeMessageEdit, messageEditIndex, messageEditScope, openMessageEdit, readMessageEdit, updateMessageEdit, type MessageEditIdentity } from "src/ts/gui/openMessageEdits"
     import { carryTypedInput, typedText } from "src/ts/typedInput"
     import { inputVersionIndex, isRequestInput, recordInputEdit, saveThenStepInputVersion, stepInputVersion } from "src/ts/inputVersions"
@@ -343,8 +343,17 @@
     let showInputEcho = $derived(role === 'char' && previousInputIndex >= 0 && DBState.db.nodeOnlyShowInputEcho !== false)
     let echoShown = $derived($inputEchoDraft && $inputEchoDraft.scope === editScope && $inputEchoDraft.key === previousInputKey ? $inputEchoDraft.text : previousInput)
 
+    // 2026-11-20 request: Stop can remount the reply; reopen its unsaved input edit.
+    onMount(() => {
+        const draft = $inputEchoDraft
+        if (showInputEcho && restoresEchoEdit(draft, editScope, previousInputKey)) {
+            echoText = draft!.text
+            echoEditing = true
+        }
+    })
+
     $effect(() => {
-        if (echoEditing) inputEchoDraft.set({ scope: editScope, key: previousInputKey, text: echoText })
+        if (echoEditing) inputEchoDraft.set({ scope: editScope, key: previousInputKey, text: echoText, editor: 'echo' })
     })
 
     /** The user message echoed under this reply, found again by its key. */
@@ -536,7 +545,7 @@
             const identity = originalEditIdentity()
             if (identity) updateMessageEdit(identity, message)
         }
-        if (role === 'user' && editMode && messageKey) inputEchoDraft.set({ scope: editScope, key: messageKey, text: message })
+        if (role === 'user' && editMode && messageKey) inputEchoDraft.set({ scope: editScope, key: messageKey, text: message, editor: 'original' })
     })
     let userDraftText = $derived(role === 'user' && !editMode && $inputEchoDraft && $inputEchoDraft.scope === editScope && $inputEchoDraft.key === messageKey ? $inputEchoDraft.text : null)
 
@@ -775,10 +784,6 @@
     })
 
     onDestroy(()=>{
-        if (echoEditing) {
-            echoEditing = false
-            commitInputEcho()
-        }
         unsubscribers.forEach(u => u())
     })
 
