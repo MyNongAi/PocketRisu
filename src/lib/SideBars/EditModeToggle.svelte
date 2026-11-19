@@ -246,6 +246,14 @@
             {/if}
         {/if}
         {#if !app}
+            <!-- User request, 2026-11-20: built-in edit prompt preset and persona opt-in. -->
+            <div class="flex flex-col gap-1" data-edit-full-prompt>
+                <div class="flex items-center justify-between gap-2">
+                    <span>프롬프트·페르소나 넣기</span>
+                    <ShSwitch className="shrink-0" checked={DBState.db.nodeOnlyEditModeFullPrompt === true} onCheckedChange={(checked) => { DBState.db.nodeOnlyEditModeFullPrompt = checked }} />
+                </div>
+                <span class="text-xs text-textcolor2 break-words">{DBState.db.nodeOnlyEditModeFullPrompt === true ? '평소 채팅처럼 프롬프트 프리셋과 페르소나를 넣습니다' : '유틸리티 봇처럼 보냅니다: 프롬프트 프리셋·탈옥·페르소나 없이 봇 설명·로어북·채팅만'}</span>
+            </div>
             <div class="flex flex-col gap-1" data-edit-model={editModel}>
                 <span>{language.editModeModel}</span>
                 <div class="grid grid-cols-2 gap-2">

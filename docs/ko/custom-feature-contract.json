@@ -3218,6 +3218,7 @@
       "criticality": "data-safety",
       "ownerFiles": [
         "src/ts/process/mcp/editMode.ts",
+        "src/ts/process/mcp/editPrompt.ts",
         "src/ts/process/mcp/editSession.ts",
         "src/ts/process/mcp/editBackup.ts",
         "src/ts/process/mcp/risuaccess/writeAccess.ts",
@@ -3250,10 +3251,13 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "let route = captureChatMainRoute(selectedCharacter, selectedChatRoom)" },
         { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "onclick={() => setEditModel('sub')}" },
         { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "data-edit-kinds" },
-        { "file": "src/ts/process/mcp/risuaccess/editKinds.ts", "contains": "nodeOnlyEditModeKinds" }
+        { "file": "src/ts/process/mcp/risuaccess/editKinds.ts", "contains": "nodeOnlyEditModeKinds" },
+        { "file": "src/ts/process/mcp/editPrompt.ts", "contains": "return editModeOn && fullPrompt !== true" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "useUtilityEditPrompt(getModuleMcps(capturedModuleContext).includes(RISU_ACCESS_URL), DBState.db.nodeOnlyEditModeFullPrompt)" }
       ],
       "regressionTests": [
         "src/ts/process/mcp/editMode.test.ts",
+        "src/ts/process/mcp/editPrompt.test.ts",
         "src/ts/process/mcp/toolGate.test.ts",
         "src/ts/process/mcp/editSession.test.ts",
         "src/ts/process/mcp/editBackup.test.ts",

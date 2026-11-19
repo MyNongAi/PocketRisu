@@ -4,7 +4,8 @@ import { DBState } from '../stores.svelte';
 import { requestInputText, type SentInput } from '../inputVersions';
 import { withoutAuxLines } from './auxLorebook';
 import { tagReplyByAuxLorebook } from './auxLorebookRun';
-import { captureChatMainRoute, warnBlockedTools } from './mcp/toolGate';
+import { captureChatMainRoute, RISU_ACCESS_URL, warnBlockedTools } from './mcp/toolGate';
+import { useUtilityEditPrompt } from './mcp/editPrompt';
 import { startAutoIllustration } from './illustrationRun';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
@@ -37,7 +38,7 @@ import { captureChatModelRoute, resolvePresetMaxOutputTokens, presetSupportsVisi
 import { hypaMemoryV3 } from "./memory/hypav3";
 import { getActiveHypaV3Preset } from "./memory/memoryPresets"
 import { resolveModelPresetContextBudget } from "./request/contextBudget"
-import { captureModuleRuntimeContext, getModuleAssets, getModuleLorebooks, getModules, getModuleToggles, getModuleTriggers, type ModuleRuntimeContext } from "./modules";
+import { captureModuleRuntimeContext, getModuleAssets, getModuleLorebooks, getModuleMcps, getModules, getModuleToggles, getModuleTriggers, type ModuleRuntimeContext } from "./modules";
 import { isColdModule, wakeModules } from "./moduleCold.svelte";
 import { hydrateAssetListsForCbs, serializeForCbsScan } from "../parser/assetListHydration";
 import { forageStorage, readImage, resolvePrioritizedAssetManifestNames } from "../globalApi.svelte";
@@ -579,7 +580,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             })
         }
     }
-    if(currentChar.utilityBot && (!(usingPromptTemplate && DBState.db.promptSettings.utilOverride))){
+    // User request, 2026-11-20: this send's built-in edit mode uses the utility template unless opted in.
+    const editUtilityPrompt = useUtilityEditPrompt(getModuleMcps(capturedModuleContext).includes(RISU_ACCESS_URL), DBState.db.nodeOnlyEditModeFullPrompt)
+    if(editUtilityPrompt || (currentChar.utilityBot && (!(usingPromptTemplate && DBState.db.promptSettings.utilOverride)))){
         promptTemplate = [
             {
               "type": "plain",
@@ -931,7 +934,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 }
                 case 'postEverything':{
                     await tokenizeChatArray(unformated.postEverything)
-                    if(usingPromptTemplate && DBState.db.promptSettings.postEndInnerFormat){
+                    if(usingPromptTemplate && !editUtilityPrompt && DBState.db.promptSettings.postEndInnerFormat){
                         await tokenizeChatArray([{
                             role: 'system',
                             content: DBState.db.promptSettings.postEndInnerFormat
@@ -1514,7 +1517,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 }
                 case 'postEverything':{
                     pushPrompts(unformated.postEverything)
-                    if(usingPromptTemplate && DBState.db.promptSettings.postEndInnerFormat){
+                    if(usingPromptTemplate && !editUtilityPrompt && DBState.db.promptSettings.postEndInnerFormat){
                         pushPrompts([{
                             role: 'system',
                             content: DBState.db.promptSettings.postEndInnerFormat
