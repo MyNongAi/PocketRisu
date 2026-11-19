@@ -28,6 +28,8 @@
         ".gitignore",
         "tools/gemini-relay/README.md",
         "tools/gemini-relay/server.mjs",
+        "tools/gemini-relay/worker.mjs",
+        "tools/gemini-relay/wrangler.toml",
         "server/node/gemini-relay-defaults.cjs",
         "gemini-relay.local.example.json",
         "src/ts/process/request/geminiRelay.ts",
@@ -43,6 +45,7 @@
       ],
       "regressionTests": [
         "tools/gemini-relay/server.test.ts",
+        "tools/gemini-relay/worker.test.ts",
         "server/node/gemini-relay-defaults.test.ts",
         "src/ts/process/request/geminiRelay.test.ts"
       ]

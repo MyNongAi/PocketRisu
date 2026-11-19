@@ -1,0 +1,14 @@
+# Cloudflare Worker deploy of the Gemini relay (worker.mjs).
+#   npx wrangler deploy --config tools/gemini-relay/wrangler.toml
+#   npx wrangler secret put RELAY_KEY --config tools/gemini-relay/wrangler.toml
+name = "gemini-relay"
+main = "worker.mjs"
+compatibility_date = "2026-01-22"
+workers_dev = true
+
+# Run near a US East cloud region, so requests to Google leave from there.
+[placement]
+region = "aws:us-east-1"
+
+[observability]
+enabled = true
