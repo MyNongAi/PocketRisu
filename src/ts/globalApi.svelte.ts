@@ -77,7 +77,8 @@ import { moduleUpdate, refreshModules } from "./process/modules";
 import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
 import { chatNeedsUpload, classifyChatSaveIntent, retainConfirmedChats } from './storage/chatSaveIntent'
 import { isLocalNetworkUrl } from "./network/localNetwork";
-import { resolveGeminiRelay } from "./process/request/geminiRelay";
+import { isGeminiRelayTarget, resolveGeminiRelay } from "./process/request/geminiRelay";
+import { waitForGeminiRelayDefaults } from "./process/request/geminiRelayDefaults";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getInlineImageMimeType } from "./media/imageMime";
 export { getInlineImageMimeType } from "./media/imageMime";
@@ -3634,6 +3635,10 @@ async function fetchNativeRaw(url: string, arg: FetchNativeArgs, hooks?: {
     const requestSignal = timeoutSignal.signal
     const db = getDatabase()
     // GEMINI-RELAY: Gemini requests go through the chosen relay.
+    if (isNodeServer && isGeminiRelayTarget(url) && db.geminiRelayMode !== 'off' &&
+        (!db.geminiRelayKey || (db.geminiRelayMode === 'jp' ? !db.geminiRelayJpUrl : !db.geminiRelayUsUrl))) {
+        await waitForGeminiRelayDefaults()
+    }
     const relay = resolveGeminiRelay(url, db)
     let throughProxy = !db.usePlainFetch
     if (useLocalNetworkRoute) {

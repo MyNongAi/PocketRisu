@@ -41,4 +41,16 @@ describe('Gemini relay selection', () => {
         expect(resolveGeminiRelay(target, { ...db, geminiRelayKey: '' })).toBeNull()
         expect(resolveGeminiRelay('https://example.com', db)).toBeNull()
     })
+
+    it('uses defaults per empty field while database values win', () => {
+        const target = 'https://aiplatform.googleapis.com/v1/test'
+        const defaults = { usUrl: 'https://default-us.example.invalid', jpUrl: 'https://default-jp.example.invalid', key: 'default-fake-secret' }
+        expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: '', geminiRelayKey: '' }, defaults))
+            .toEqual({ url: defaults.usUrl, headers: { 'x-relay-target': target, 'x-relay-key': defaults.key } })
+        expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'jp', geminiRelayJpUrl: '' }, defaults))
+            .toMatchObject({ url: defaults.jpUrl, headers: { 'x-relay-key': db.geminiRelayKey } })
+        expect(resolveGeminiRelay(target, db, defaults))
+            .toMatchObject({ url: db.geminiRelayUsUrl, headers: { 'x-relay-key': db.geminiRelayKey } })
+        expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: '', geminiRelayKey: '' }, {})).toBeNull()
+    })
 })

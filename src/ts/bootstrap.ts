@@ -44,6 +44,7 @@ import { creatorsOf, organizeCreatorFolders } from "./creatorFolders";
 import { isEmbeddedRisuPane } from "./chatSplitPane";
 import { isNodeServer } from "./platform";
 import { startLaptopUseBeat } from "./laptopUseBeat";
+import { loadGeminiRelayDefaults } from "./process/request/geminiRelayDefaults";
 
 // v2 reruns the one-shot grouping after the web/local/mobile collection merge.
 // v1 had already completed against the web collection alone, so later imports
@@ -76,6 +77,7 @@ export async function loadData() {
             let createdFreshDatabase = false
             {
                 await forageStorage.Init()
+                if (isNodeServer) void loadGeminiRelayDefaults()
 
                 LoadingStatusState.text = "Loading Local Save File..."
                 let gotStorage: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array

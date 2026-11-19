@@ -9,9 +9,16 @@
       "title": "Gemini 요청 미국·일본 중계",
       "criticality": "core-ux",
       "ownerFiles": [
+        ".gitignore",
+        "tools/gemini-relay/README.md",
         "tools/gemini-relay/server.mjs",
+        "server/node/gemini-relay-defaults.cjs",
+        "gemini-relay.local.example.json",
         "src/ts/process/request/geminiRelay.ts",
+        "src/ts/process/request/geminiRelayDefaults.ts",
         "src/ts/globalApi.svelte.ts",
+        "src/ts/bootstrap.ts",
+        "src/lib/Setting/Wrappers/SettingText.svelte",
         "src/ts/setting/advancedSettingsData.ts",
         "src/ts/storage/database.svelte.ts"
       ],
@@ -20,6 +27,7 @@
       ],
       "regressionTests": [
         "tools/gemini-relay/server.test.ts",
+        "server/node/gemini-relay-defaults.test.ts",
         "src/ts/process/request/geminiRelay.test.ts"
       ]
     },

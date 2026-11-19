@@ -5,6 +5,8 @@
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte';
     import Help from 'src/lib/Others/Help.svelte';
     import SettingRowLayout from './SettingRowLayout.svelte';
+    import { geminiRelayDefaults, type GeminiRelayDefaults } from 'src/ts/process/request/geminiRelayDefaults';
+    import { getCurrentLocale } from 'src/lang';
 
     interface Props {
         item: SettingItem;
@@ -14,6 +16,14 @@
     let { item, ctx }: Props = $props();
 
     let localValue: any = $state(untrack(() => getSettingValue(item, ctx)));
+    const relayField: keyof GeminiRelayDefaults | null = $derived(item.id === 'adv.geminiRelayJpUrl' ? 'jpUrl'
+        : item.id === 'adv.geminiRelayUsUrl' ? 'usUrl'
+        : item.id === 'adv.geminiRelayKey' ? 'key' : null);
+    const placeholder = $derived(relayField && !localValue && $geminiRelayDefaults[relayField]
+        ? (getCurrentLocale().startsWith('ko')
+            ? '비어 있으면 노트북에 저장된 기본값을 씁니다'
+            : "Empty: the laptop's stored default is used")
+        : item.options?.placeholder);
 
     // Sync: DB → local (one-way read)
     $effect(() => {
@@ -41,7 +51,7 @@
                 size="sm"
                 padding={true}
                 bind:value={localValue}
-                placeholder={item.options?.placeholder}
+                {placeholder}
                 hideText={item.options?.hideText}
             />
         {/snippet}
@@ -55,7 +65,7 @@
         className="mt-2"
         marginBottom={true}
         bind:value={localValue}
-        placeholder={item.options?.placeholder}
+        {placeholder}
         hideText={item.options?.hideText}
     />
 {/if}

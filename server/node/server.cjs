@@ -56,6 +56,7 @@ const {
     logger, installProcessHandlers, expressErrorMiddleware,
 } = require('./logs.cjs');
 const { createRequestLogs } = require('./request-logs.cjs');
+const { createGeminiRelayDefaults } = require('./gemini-relay-defaults.cjs');
 const { forwardRealmSearch } = require('./realmRelay.cjs');
 const { cacheFileName, createThumbnailCache } = require('./thumbnail-cache.cjs');
 const { validateInspectionBatch, inspectAssetReferences } = require('./plugin-asset-inspection.cjs');
@@ -7020,6 +7021,7 @@ app.delete('/api/logs', async (req, res, next) => {
 // endpoints use.
 const requestLogs = createRequestLogs({ saveDir: savePath });
 requestLogs.registerRoutes(app, { auth: checkAuth, activeSession: checkActiveSession });
+createGeminiRelayDefaults({ logger }).registerRoutes(app, { auth: checkAuth });
 
 app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
     if(!await checkAuth(req, res)){
