@@ -27,6 +27,9 @@ export default defineConfig({
       // (`node --test tools/*.test.cjs`); vitest finds no suite in them.
       'tools/**/*.test.cjs',
       'tools/**/*.test.mjs',
+      // The Gemini relay is a Node server; its suite runs under
+      // vitest.config.server.ts (happy-dom's fetch rewrites Origin).
+      'tools/gemini-relay/**',
     ],
   },
 })
