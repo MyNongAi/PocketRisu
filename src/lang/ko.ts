@@ -1,10 +1,11 @@
 import { helpKo } from "./help.ko";
 
 export const languageKorean = {
-  geminiRelayMode: "Gemini 중계 지역",
+  geminiRelayMode: "Gemini 요청 경로",
   geminiRelayOff: "끄기",
   geminiRelayUs: "미국 중계",
   geminiRelayJp: "일본 중계",
+  geminiRelayLaptop: "노트북 경유",
   geminiRelayUsUrl: "미국 중계 주소",
   geminiRelayJpUrl: "일본 중계 주소",
   geminiRelayKey: "중계 키",

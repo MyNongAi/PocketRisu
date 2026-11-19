@@ -1524,7 +1524,7 @@ export interface Database{
     systemContentReplacement:string
     systemRoleReplacement:'user'|'assistant'
     vertexPrivateKey: string
-    geminiRelayMode?: 'off' | 'us' | 'jp'
+    geminiRelayMode?: 'off' | 'us' | 'jp' | 'laptop'
     geminiRelayUsUrl?: string
     geminiRelayJpUrl?: string
     geminiRelayKey?: string

@@ -12,9 +12,14 @@ export function isGeminiRelayTarget(raw: string): boolean {
     } catch { return false }
 }
 
+export function routeGeminiThroughLaptop(url: string, db: Pick<Database, 'geminiRelayMode'>, isNodeServer: boolean): boolean {
+    return isNodeServer && db.geminiRelayMode === 'laptop' && isGeminiRelayTarget(url)
+}
+
 export function resolveGeminiRelay(url: string, db: Pick<Database,
     'geminiRelayMode' | 'geminiRelayUsUrl' | 'geminiRelayJpUrl' | 'geminiRelayKey'>,
     defaults: GeminiRelayDefaults = currentGeminiRelayDefaults()) {
+    if (db.geminiRelayMode !== 'us' && db.geminiRelayMode !== 'jp') return null
     const key = db.geminiRelayKey || defaults.key
     if (!isGeminiRelayTarget(url) || !key) return null
     const relayUrl = db.geminiRelayMode === 'us' ? (db.geminiRelayUsUrl || defaults.usUrl)

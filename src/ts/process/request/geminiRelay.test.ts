@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isGeminiRelayTarget, resolveGeminiRelay } from './geminiRelay'
+import { isGeminiRelayTarget, resolveGeminiRelay, routeGeminiThroughLaptop } from './geminiRelay'
 
 const db = {
     geminiRelayMode: 'us' as const,
@@ -9,6 +9,16 @@ const db = {
 }
 
 describe('Gemini relay selection', () => {
+    it('routes only Gemini requests in laptop mode on the Node server', () => {
+        const target = 'https://generativelanguage.googleapis.com/v1/models'
+        expect(routeGeminiThroughLaptop(target, { geminiRelayMode: 'laptop' }, true)).toBe(true)
+        expect(routeGeminiThroughLaptop('https://example.com/v1', { geminiRelayMode: 'laptop' }, true)).toBe(false)
+        for (const mode of ['off', 'us', 'jp'] as const) {
+            expect(routeGeminiThroughLaptop(target, { geminiRelayMode: mode }, true)).toBe(false)
+        }
+        expect(routeGeminiThroughLaptop(target, { geminiRelayMode: 'laptop' }, false)).toBe(false)
+    })
+
     it('allows only exact Google API hosts over HTTPS', () => {
         for (const url of [
             'https://aiplatform.googleapis.com/v1',
@@ -34,6 +44,7 @@ describe('Gemini relay selection', () => {
             headers: { 'x-relay-target': target, 'x-relay-key': 'secret' } })
         expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'jp' })).toMatchObject({ url: db.geminiRelayJpUrl })
         expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'off' })).toBeNull()
+        expect(resolveGeminiRelay(target, { ...db, geminiRelayMode: 'laptop' })).toBeNull()
         expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: '' })).toBeNull()
         expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: 'http://remote.example' })).toBeNull()
         expect(resolveGeminiRelay(target, { ...db, geminiRelayUsUrl: 'http://127.0.0.1:8080' })).not.toBeNull()

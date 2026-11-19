@@ -41,7 +41,8 @@
         "src/ts/storage/database.svelte.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY: Gemini requests go through the chosen relay." }
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY: Gemini requests go through the chosen relay." },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "GEMINI-RELAY-LAPTOP: Gemini requests can go out through the laptop server." }
       ],
       "regressionTests": [
         "tools/gemini-relay/server.test.ts",

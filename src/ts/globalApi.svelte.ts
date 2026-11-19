@@ -77,7 +77,7 @@ import { moduleUpdate, refreshModules } from "./process/modules";
 import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
 import { chatNeedsUpload, classifyChatSaveIntent, retainConfirmedChats } from './storage/chatSaveIntent'
 import { isLocalNetworkUrl } from "./network/localNetwork";
-import { isGeminiRelayTarget, resolveGeminiRelay } from "./process/request/geminiRelay";
+import { isGeminiRelayTarget, resolveGeminiRelay, routeGeminiThroughLaptop } from "./process/request/geminiRelay";
 import { waitForGeminiRelayDefaults } from "./process/request/geminiRelayDefaults";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getInlineImageMimeType } from "./media/imageMime";
@@ -3635,7 +3635,7 @@ async function fetchNativeRaw(url: string, arg: FetchNativeArgs, hooks?: {
     const requestSignal = timeoutSignal.signal
     const db = getDatabase()
     // GEMINI-RELAY: Gemini requests go through the chosen relay.
-    if (isNodeServer && isGeminiRelayTarget(url) && db.geminiRelayMode !== 'off' &&
+    if (isNodeServer && isGeminiRelayTarget(url) && (db.geminiRelayMode === 'us' || db.geminiRelayMode === 'jp') &&
         (!db.geminiRelayKey || (db.geminiRelayMode === 'jp' ? !db.geminiRelayJpUrl : !db.geminiRelayUsUrl))) {
         await waitForGeminiRelayDefaults()
     }
@@ -3646,6 +3646,11 @@ async function fetchNativeRaw(url: string, arg: FetchNativeArgs, hooks?: {
     }
 
     try {
+        // GEMINI-RELAY-LAPTOP: Gemini requests can go out through the laptop server.
+        if (routeGeminiThroughLaptop(url, db, isNodeServer)) {
+            hooks?.onRoute?.('proxy')
+            return await fetchViaProxy2(url, headers, realBody, { ...arg, signal: requestSignal })
+        }
         if (relay) {
             const relayHeaders = { ...headers, ...relay.headers }
             try {
