@@ -45,7 +45,7 @@ export function createServiceAccountTokenCache(
     const entries = new Map<string, CacheEntry>()
 
     function cacheKey(sa: ParsedServiceAccount, scope: string): string {
-        return `${sa.tokenUri}|${sa.clientEmail}|${scope}`
+        return JSON.stringify([sa.tokenUri, sa.clientEmail, sa.privateKey, scope])
     }
 
     function isFresh(token: ResolvedAccessToken): boolean {

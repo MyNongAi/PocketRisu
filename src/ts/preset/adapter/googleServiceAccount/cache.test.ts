@@ -134,6 +134,17 @@ describe('createServiceAccountTokenCache', () => {
         expect(calls).toHaveLength(2)
     })
 
+    test('separates signing keys even when the service account email is reused', async () => {
+        const nowMs = 1_000_000
+        const { exchange, calls } = makeExchanger({ issuedAtMs: nowMs })
+        const cache = createServiceAccountTokenCache({ now: () => nowMs, exchange })
+        const first = makeServiceAccountFixture()
+        const rotated = makeServiceAccountFixture({ privateKey: `${first.privateKey}\nrotation-fixture` })
+        await cache.getAccessToken({ serviceAccount: first })
+        await cache.getAccessToken({ serviceAccount: rotated })
+        expect(calls).toHaveLength(2)
+    })
+
     test('retries after a failed exchange (does not cache failure)', async () => {
         let nowMs = 1_000_000
         const { exchange, calls } = makeExchanger({

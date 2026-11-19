@@ -337,6 +337,7 @@ export interface ModelPreset {
     // localStorage, never in the db.
     promptCaching?: GeminiPromptCachingConfig
     apiKeyRef?: string
+    rotationKeyRefs?: string[]
     inlineCredential?: unknown
     fallbackModelPresetIds?: string[]
     pinned?: boolean

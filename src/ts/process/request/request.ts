@@ -45,6 +45,7 @@ import { refusesTrailingAssistant } from "../memory/trailingPrefill";
 import { toLogSource, toRequestKind } from "./logSource";
 import { resolveChatModelBinding, classicModelIdFor, buildModelPresetCredential, applyPromptPresetParams, presetSupportsVision, type RequestModelRouteSnapshot } from "./modelPresetBinding";
 import { modelPresetIdOf } from "src/ts/preset/pickerId";
+import { rotationCredentials, runKeyRotation, shouldRotateKey } from "src/ts/preset/keyRotation";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import { createRequestLogScope, recordRequestLog, stripInlineMedia, type RequestLogRoute, type RequestLogSource, type RequestLogUsage } from "src/ts/requestLog";
@@ -790,7 +791,39 @@ function toAdapterToolDef(tool: MCPTool): AdapterToolDef {
 const formatPresetReasoning = formatReasoningParts
 
 async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal=null, mode:ModelModeExtended='model'):Promise<requestDataResponse> {
-    const credential = buildModelPresetCredential(preset)
+    const first = buildModelPresetCredential(preset)
+    const credentials = rotationCredentials(preset, first, getDatabase().apiKeyPool)
+    if (arg.previewBody || credentials.length === 0 || (credentials.length === 1 && first)) {
+        return requestModelPresetAttempt(arg, preset, abortSignal, mode, first)
+    }
+    const originalMessages = safeStructuredClone(arg.formated)
+    // PRESET-KEY-ROTATION: a refused attempt retries at once with the preset's next key.
+    try {
+        return await runKeyRotation(preset.id, credentials, () => !!abortSignal?.aborted, (credential) => {
+            arg.formated = safeStructuredClone(originalMessages)
+            return requestModelPresetAttempt(arg, preset, abortSignal, mode, credential, true)
+        })
+    } catch (err) {
+        return presetAttemptFailure(err, preset)
+    }
+}
+
+function presetAttemptFailure(err: unknown, preset: ModelPreset): requestDataResponse {
+    let wireModel: string
+    try { wireModel = resolveWireModelId(preset) }
+    catch { wireModel = preset.profileSnapshot.modelId || preset.name }
+    return {
+        type: 'fail', result: err instanceof Error ? err.message : String(err),
+        model: wireModel, modelLabel: preset.name,
+        noRetry: err instanceof ModelJobBusyError || err instanceof ModelJobConnectionLostError
+            || (err instanceof ModelPresetAdapterError && (err.kind === 'invalid-request' || err.kind === 'not-found')),
+        rateLimited: err instanceof ModelPresetAdapterError && err.kind === 'rate-limit',
+    }
+}
+
+async function requestModelPresetAttempt(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal, mode:ModelModeExtended, credential:AdapterCredential | undefined, rotateOnRefusal = false):Promise<requestDataResponse> {
+    let toolStarted = false
+    let streamStarted = false
     const kind = preset.profileSnapshot.adapterKind
     // Actual wire model id, for logs and generationInfo. The preset NAME was
     // recorded before, which loses the real model once the preset is edited —
@@ -1022,7 +1055,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         // streaming tool_call assembly is a later stage. Status is NOT reported
         // for the tool path in v1 (it bypasses the pump); see the toast infra note.
         if (tools) {
-            const { result, toolsExecuted } = await runModelPresetToolLoop(arg, preset, kind, credential, fetchImpl, messages, tools, abortSignal)
+            const { result, toolsExecuted } = await runModelPresetToolLoop(arg, preset, kind, credential, fetchImpl, messages, tools, abortSignal, () => { toolStarted = true })
             // The tool loop issues one request per turn; each is its own log
             // entry and all of them flush together here.
             void logScope.close()
@@ -1065,6 +1098,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
             // inside the stream: no retry ever ran (2026-11-09, six 429s each
             // sent once).
             const gen = await awaitFirstDelta(streamModelPreset(kind, preset, options, credential))
+            streamStarted = true
             const stream = new ReadableStream<StreamResponseChunk>({
                 start(controller){
                     return pumpPresetStream(gen, controller, {
@@ -1151,6 +1185,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
             const outcome = abortSignal?.aborted ? 'aborted' : 'failed'
             safeStatus(() => endStatus(genId, outcome, { now: Date.now(), error: outcome === 'failed' ? (err instanceof Error ? err.message : String(err)) : undefined }))
         }
+        if (rotateOnRefusal && !toolStarted && !streamStarted && shouldRotateKey(err, abortSignal?.aborted)) throw err
         return {
             type: 'fail',
             result: err instanceof Error ? err.message : String(err),
@@ -1217,6 +1252,7 @@ async function runModelPresetToolLoop(
     messages: AdapterChatMessage[],
     tools: AdapterToolDef[],
     abortSignal: AbortSignal | null,
+    onToolStart?: () => void,
 ): Promise<{ result: string; toolsExecuted: boolean }> {
     // Tracks whether any tool actually ran, so the caller can block outer
     // success-path retries that would otherwise re-execute side-effecting tools.
@@ -1237,6 +1273,7 @@ async function runModelPresetToolLoop(
             credential,
         ),
         executeTool: async (call) => {
+            onToolStart?.()
             toolsExecuted = true
             const executed = await executeModelPresetTool(arg, call)
             // Persistence is best-effort: the tool already ran, so a failed

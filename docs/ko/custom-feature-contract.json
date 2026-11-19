@@ -1595,6 +1595,24 @@
       ]
     },
     {
+      "id": "PRESET-KEY-ROTATION",
+      "title": "모델 프리셋 자동 키 회전",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/preset/keyRotation.ts",
+        "src/ts/process/request/request.ts",
+        "src/lib/Setting/Pages/Model/KeyRotationField.svelte",
+        "src/lib/UI/GUI/SchemaFormRenderer.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/request/request.ts", "contains": "PRESET-KEY-ROTATION: a refused attempt retries at once with the preset's next key." },
+        { "file": "src/lib/Setting/Pages/Model/KeyRotationField.svelte", "contains": "PRESET-KEY-ROTATION: extra keys for automatic rotation." }
+      ],
+      "regressionTests": [
+        "src/ts/preset/keyRotation.test.ts"
+      ]
+    },
+    {
       "id": "VERTEX-LOCATION-PICKER",
       "title": "Vertex Location 리전 선택과 직접 입력",
       "criticality": "core-ux",
