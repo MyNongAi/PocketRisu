@@ -1785,7 +1785,8 @@ async function requestPlugin(arg:RequestDataArgumentExtended):Promise<requestDat
         writeLog(providerForLog, providerArgForLog, '', false, false, { aborted: arg.abortSignal?.aborted, errorMessage: `${error}` })
         return {
             type: 'fail',
-            result: `Plugin Error from ${db.currentPluginProvider}: ` + JSON.stringify(error),
+            // PLUGIN-STOP-CUT (2026-11-20): a cut is an ordinary user stop.
+            result: arg.abortSignal?.aborted ? '' : `Plugin Error from ${db.currentPluginProvider}: ` + JSON.stringify(error),
             model: responseModel
         }
     }

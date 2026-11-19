@@ -5,6 +5,22 @@
   "updatedAt": "2026-11-20",
   "features": [
     {
+      "id": "PLUGIN-STOP-CUT",
+      "title": "플러그인 제공자 요청 중지",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/plugins/pluginStopCut.ts",
+        "src/ts/plugins/apiV3/v3.svelte.ts",
+        "src/ts/plugins/apiV3/factory.ts",
+        "src/ts/process/request/request.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/plugins/pluginStopCut.ts", "contains": "PLUGIN-STOP-CUT (2026-11-20)" },
+        { "file": "src/ts/plugins/apiV3/factory.ts", "contains": "PLUGIN-STOP-CUT (2026-11-20)" }
+      ],
+      "regressionTests": ["src/ts/plugins/pluginStopCut.test.ts"]
+    },
+    {
       "id": "QUICK-PRESET-SETTINGS",
       "title": "모델 프리셋 기본 정보의 자주 쓰는 설정",
       "criticality": "core-ux",

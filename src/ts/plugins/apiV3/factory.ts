@@ -880,7 +880,7 @@ export class SandboxHost {
         });
     }
 
-    private replaceStreamsWithPorts(obj: any): { result: any, ports: MessagePort[], cleanups: (() => void)[] } {
+    private replaceStreamsWithPorts(obj: any, onFinished?: () => void): { result: any, ports: MessagePort[], cleanups: (() => void)[] } {
         const ports: MessagePort[] = [];
         const cleanups: (() => void)[] = [];
         if (!obj || typeof obj !== 'object') return { result: obj, ports, cleanups };
@@ -897,10 +897,12 @@ export class SandboxHost {
             let finished = false;
 
             const finish = () => {
+                if (finished) return;
                 finished = true;
                 ch.port1.onmessage = null;
                 ch.port1.close();
                 this.activeStreamCleanups.delete(cleanup);
+                onFinished?.();
             };
 
             const cleanup = () => {
@@ -1114,7 +1116,10 @@ export class SandboxHost {
 
 
                     response.result = this.serialize(result);
-                    const { result: streamResult, ports: streamPorts, cleanups } = this.replaceStreamsWithPorts(response.result);
+                    // PLUGIN-STOP-CUT (2026-11-20): a Response can return before
+                    // its body ends; retain guest fetch signals through that body.
+                    const { result: streamResult, ports: streamPorts, cleanups } = this.replaceStreamsWithPorts(response.result,
+                        () => { for (const id of usedAbortIds) this.abortControllers.delete(id); });
                     response.result = streamResult;
                     streamCleanups = cleanups;
                     transferables = this.collectTransferables(response, streamPorts);
@@ -1124,7 +1129,8 @@ export class SandboxHost {
                     delete response.result;
                     response.error = err?.message || String(err || "Host execution error");
                 } finally {
-                    for (const id of usedAbortIds) this.abortControllers.delete(id);
+                    // Without a body stream nothing reads on, so the signals go now.
+                    if (streamCleanups.length === 0) for (const id of usedAbortIds) this.abortControllers.delete(id);
                 }
 
                 console.log("Original request:", data);

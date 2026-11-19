@@ -1,5 +1,6 @@
 import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type EditFunction, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
 import { SandboxHost } from "./factory";
+import { beginPluginProviderCall, pluginFetchSignal } from "../pluginStopCut";
 import { getCurrentChat, getDatabase, normalizeChat } from "src/ts/storage/database.svelte";
 import { resolveClassicModelId } from "src/ts/process/request/modelPresetBinding";
 import { fetchChatFromServer, saveChatToServer } from "src/ts/storage/chatStorage";
@@ -726,7 +727,9 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                     console.warn(`Request contains potentially sensitive header '${headerName}'. handling of such headers may be changed to only work with nativeFetch.`);
                 }
             }
-            return oldApis.risuFetch(url, withPluginName(options));
+            // PLUGIN-STOP-CUT (2026-11-20): bind only this provider's active chat fetch.
+            const tracked = pluginFetchSignal(plugin.name, options?.abortSignal);
+            return oldApis.risuFetch(url, { ...withPluginName(options), abortSignal: tracked.signal }).finally(tracked.done);
         },
         nativeFetch: (url, options) => {
             for(const blocked of urlBlacklist){
@@ -742,7 +745,14 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                     console.warn(`Request contains potentially sensitive header '${headerName}'. handling of such headers may be changed to use server-side approch with write-only api access in the future for better security.`);
                 }
             }
-            return oldApis.nativeFetch(url, withPluginName(options));
+            // PLUGIN-STOP-CUT (2026-11-20): keep the cut through response-body streaming.
+            const tracked = pluginFetchSignal(plugin.name, options?.signal);
+            return oldApis.nativeFetch(url, { ...withPluginName(options), signal: tracked.signal }).then(response => {
+                if (!response.body) { tracked.done(); return response; }
+                return new Response(response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+                    flush() { tracked.done(); },
+                })), response);
+            }, error => { tracked.done(); throw error; });
         },
         getChar: getCharacterForPlugin,
         setChar: setCharacterForPlugin,
@@ -758,7 +768,22 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                //mode is overridden to v3, due to vulnerabilities using mode.
                //Alternative to mode will be added in future
                arg.mode = 'v3'
-               return await func(arg, abortSignal);
+               // PLUGIN-STOP-CUT (2026-11-20): requests are owned only while a
+               // chat provider call or its returned stream is active.
+               const scope = beginPluginProviderCall(plugin.name, abortSignal);
+               try {
+                   const result = await func(arg, abortSignal);
+                   if (result?.content instanceof ReadableStream) {
+                       return { ...result, content: result.content.pipeThrough(new TransformStream<string, string>({
+                           flush() { scope.close(); },
+                       })) };
+                   }
+                   scope.close();
+                   return result;
+               } catch (error) {
+                   scope.close();
+                   throw error;
+               }
             }
             pluginV2.providers.set(name, provider)
             pluginV2.providerOptions.set(name, options ?? {})
