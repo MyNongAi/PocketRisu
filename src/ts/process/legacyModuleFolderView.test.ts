@@ -50,6 +50,7 @@ describe('legacyModuleFolderView', () => {
         const folders = [
             { id: 'link', name: '[링크]', moduleIds: ['link-module'], nodeOnlyLinkFolder: true },
             { id: 'link2', name: '[링크2]', moduleIds: ['manual-link'], nodeOnlyLinkFolder: true, nodeOnlyLinkKind: 'manual' as const },
+            { id: 'bot-link', name: '[링크 : A]', moduleIds: ['bot-link-module'], nodeOnlyLinkFolder: true, nodeOnlyLinkBotIds: ['A'] },
             { id: 'prompt', name: '[프롬]', moduleIds: [], nodeOnlyPresetFolder: 'root' as const },
             { id: 'preset', name: 'preset', moduleIds: ['preset-module'], nodeOnlyPresetFolder: 'preset' as const, nodeOnlyParentFolderId: 'prompt' },
             { id: 'star', name: '★', moduleIds: ['favorite'], nodeOnlyFavoritesFolder: true },
@@ -60,7 +61,7 @@ describe('legacyModuleFolderView', () => {
             { id: 'inner', name: 'Inner', moduleIds: ['nested'], nodeOnlyParentFolderId: 'outer' },
         ]
         const modules = [
-            { folderId: 'link' }, { folderId: 'link2' }, { folderId: 'preset' },
+            { folderId: 'link' }, { folderId: 'link2' }, { folderId: 'bot-link' }, { folderId: 'preset' },
             { folderId: 'star' }, { folderId: 'candidate' }, { folderId: 'old-candidate' },
             { folderId: 'linked-user' }, { folderId: 'inner' }, { folderId: 'gone' },
         ]
@@ -69,9 +70,9 @@ describe('legacyModuleFolderView', () => {
         const view = legacyModuleFolderView(modules, folders)
 
         expect(view.folders.map((folder) => folder.id)).toEqual(['old-candidate', 'linked-user', 'outer', 'inner'])
-        expect(view.itemFolderIds).toEqual([undefined, undefined, undefined, undefined, undefined, 'old-candidate', 'linked-user', 'inner', undefined])
+        expect(view.itemFolderIds).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, 'old-candidate', 'linked-user', 'inner', undefined])
         expect(view.folders.every((folder) => !folder.nodeOnlyParentFolderId)).toBe(true)
         expect({ folders, modules }).toEqual(before)
-        expect(folders[7].nodeOnlyParentFolderId).toBe('link')
+        expect(folders[8].nodeOnlyParentFolderId).toBe('link')
     })
 })

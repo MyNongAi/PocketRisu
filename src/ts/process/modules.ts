@@ -150,7 +150,7 @@ export function syncLinkedFolders(db = getDatabase()): boolean {
         db.moduleFolders = presetGathered.folders
         changed = true
     }
-    const gathered = gatherLinkedModules(db.modules, db.moduleFolders ?? [], linkedModuleIds(db.characters), v4)
+    const gathered = gatherLinkedModules(db.modules, db.moduleFolders ?? [], linkedModuleIds(db.characters), v4, db.characters)
     if (gathered) {
         db.modules = gathered.modules
         db.moduleFolders = gathered.folders

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { gatherLinkedModules, LINK_FOLDER_NAME, linkedModuleIds, linkKindOf, MANUAL_LINK_FOLDER_NAME } from './linkedModuleFolder'
+import { botLinkFolderName, gatherLinkedModules, LINK_FOLDER_NAME, linkedModuleIds, linkKindOf, MANUAL_LINK_FOLDER_NAME } from './linkedModuleFolder'
 import { sortModuleFoldersByActivation } from './moduleSort'
+import type { ModuleFolder } from './moduleFolders'
 
 const m = (id: string, folderId?: string, name = id) => ({ id, name, ...(folderId ? { folderId } : {}) })
 // A module fetched from a Proton share: a Realm card's asset module.
@@ -28,6 +29,125 @@ describe('linkKindOf', () => {
 describe('gatherLinkedModules', () => {
     const userFolder = { id: 'U', name: 'Mine', moduleIds: [] }
     const similar = (id: string, extra = {}) => ({ id, name: `[유사 후보] ${id} · 2개`, moduleIds: [], duplicateCandidate: { kind: 'module', key: id }, ...extra })
+    const gather = (modules: ReturnType<typeof m>[], folders: ModuleFolder[], bots: { chaId: string, name: string, modules: string[], trashTime?: number }[]) =>
+        gatherLinkedModules(modules, folders, linkedModuleIds(bots), newId, bots)
+
+    it('keeps one link in [링크2], but gives two exclusive links a top-level bot folder across kinds', () => {
+        n = 0
+        const one = gather([m('a')], [], [{ chaId: 'A', name: 'A', modules: ['a'] }])!
+        expect(one.folders).toMatchObject([{ name: MANUAL_LINK_FOLDER_NAME, moduleIds: ['a'] }])
+        const two = gather([m('a'), p('b')], [{ id: 'U', name: 'Mine', moduleIds: [], sortOrder: 0 }], [{ chaId: 'A', name: 'A', modules: ['a', 'b'] }])!
+        const bot = two.folders.find((folder) => folder.nodeOnlyLinkBotIds?.[0] === 'A')!
+        expect(bot).toMatchObject({ name: '[링크 : A]', nodeOnlyLinkFolder: true, moduleIds: ['a', 'b'], sortOrder: -1 })
+        expect(bot.nodeOnlyParentFolderId).toBeUndefined()
+        expect(two.folders.some((folder) => folder.name === LINK_FOLDER_NAME || folder.name === MANUAL_LINK_FOLDER_NAME)).toBe(false)
+        expect(sortModuleFoldersByActivation(two.folders, two.modules)[0].id).toBe(bot.id)
+        expect(gather(two.modules, two.folders, [{ chaId: 'A', name: 'A', modules: ['a', 'b'] }])).toBeNull()
+        const dropped = gather(two.modules, two.folders, [{ chaId: 'A', name: 'A', modules: ['a'] }])!
+        expect(dropped.folders.some((folder) => folder.nodeOnlyLinkBotIds)).toBe(false)
+        expect(dropped.modules.find((module) => module.id === 'a')?.folderId).toBe(dropped.folders.find((folder) => folder.name === MANUAL_LINK_FOLDER_NAME)?.id)
+        expect(dropped.modules.find((module) => module.id === 'b')?.folderId).toBeUndefined()
+    })
+
+    it('excludes shared and user-folder modules from each bot threshold', () => {
+        n = 0
+        const bots = [{ chaId: 'A', name: 'A', modules: ['a', 'shared', 'mine'] }, { chaId: 'B', name: 'B', modules: ['shared'] }]
+        const result = gather([m('a'), m('shared'), m('mine', 'U')], [{ id: 'U', name: 'Mine', moduleIds: [] }], bots)!
+        expect(result.folders.some((folder) => folder.nodeOnlyLinkBotIds)).toBe(false)
+        expect(result.folders.find((folder) => folder.name === MANUAL_LINK_FOLDER_NAME)?.moduleIds).toEqual(['a', 'shared'])
+        expect(result.modules.find((module) => module.id === 'mine')?.folderId).toBe('U')
+    })
+
+    it('moves a newly shared Proton module out of a bot folder into [링크]', () => {
+        n = 0
+        const first = gather([m('a'), p('shared')], [], [{ chaId: 'A', name: 'A', modules: ['a', 'shared'] }])!
+        const second = gather(first.modules, first.folders, [
+            { chaId: 'A', name: 'A', modules: ['a', 'shared'] },
+            { chaId: 'B', name: 'B', modules: ['shared'] },
+        ])!
+        expect(second.folders.some((folder) => folder.nodeOnlyLinkBotIds)).toBe(false)
+        expect(second.folders.find((folder) => folder.name === LINK_FOLDER_NAME)?.moduleIds).toEqual(['shared'])
+        expect(second.folders.find((folder) => folder.name === MANUAL_LINK_FOLDER_NAME)?.moduleIds).toEqual(['a'])
+    })
+
+    it('groups two shared modules by their bot set and reuses the folder on sync', () => {
+        n = 0
+        const bots = [{ chaId: 'A', name: 'A', modules: ['x', 'y'] }, { chaId: 'B', name: 'B', modules: ['x', 'y'] }]
+        const first = gather([m('x'), p('y')], [], bots)!
+        expect(first.folders).toMatchObject([{ name: '[링크 : A, B]', nodeOnlyLinkBotIds: ['A', 'B'], moduleIds: ['x', 'y'] }])
+        expect(gather(first.modules, first.folders, bots)).toBeNull()
+        const renamed = gather(first.modules, first.folders, [{ ...bots[0], name: 'New' }, bots[1]])!
+        expect(renamed.folders[0]).toMatchObject({ id: first.folders[0].id, name: '[링크 : New, B]', nodeOnlyLinkBotIds: ['A', 'B'] })
+    })
+
+    it('leaves one shared module in its link folder', () => {
+        n = 0
+        const bots = [{ chaId: 'A', name: 'A', modules: ['x'] }, { chaId: 'B', name: 'B', modules: ['x'] }]
+        const first = gather([p('x')], [], bots)!
+        expect(first.folders).toMatchObject([{ name: LINK_FOLDER_NAME, moduleIds: ['x'] }])
+        expect(first.folders.some((folder) => folder.nodeOnlyLinkBotIds)).toBe(false)
+        expect(gather(first.modules, first.folders, bots)).toBeNull()
+    })
+
+    it('keeps own and shared groups separate, then dissolves groups as B unlinks', () => {
+        n = 0
+        const bots = [{ chaId: 'A', name: 'A', modules: ['a', 'b', 'x', 'y'] }, { chaId: 'B', name: 'B', modules: ['x', 'y'] }]
+        const first = gather([m('a'), m('b'), m('x'), m('y')], [], bots)!
+        expect(first.folders.filter((folder) => folder.nodeOnlyLinkBotIds).map((folder) => [folder.name, folder.moduleIds]))
+            .toEqual([['[링크 : A, B]', ['x', 'y']], ['[링크 : A]', ['a', 'b']]])
+        const second = gather(first.modules, first.folders, [bots[0], { ...bots[1], modules: ['y'] }])!
+        expect(second.folders.find((folder) => folder.nodeOnlyLinkBotIds?.join() === 'A')?.moduleIds).toEqual(['a', 'b', 'x'])
+        expect(second.folders.some((folder) => folder.nodeOnlyLinkBotIds?.join() === 'A,B')).toBe(false)
+        expect(second.folders.find((folder) => folder.name === MANUAL_LINK_FOLDER_NAME)?.moduleIds).toEqual(['y'])
+        const third = gather(second.modules, second.folders, [bots[0], { ...bots[1], modules: [] }])!
+        expect(third.folders.find((folder) => folder.nodeOnlyLinkBotIds?.join() === 'A')?.moduleIds).toEqual(['a', 'b', 'x', 'y'])
+        expect(third.folders.some((folder) => folder.name === MANUAL_LINK_FOLDER_NAME)).toBe(false)
+        expect(gather(third.modules, third.folders, [bots[0], { ...bots[1], modules: [] }])).toBeNull()
+    })
+
+    it('orders names and stored IDs by characters order even when links list another bot first', () => {
+        n = 0
+        const bots = [{ chaId: 'B', name: 'Bee', modules: ['x', 'y'] }, { chaId: 'A', name: '  ', modules: ['y', 'x'] }]
+        const first = gather([m('x'), m('y')], [], bots)!
+        expect(first.folders[0]).toMatchObject({ name: '[링크 : Bee, 이름 없음]', nodeOnlyLinkBotIds: ['B', 'A'] })
+        expect(gather(first.modules, first.folders, bots)).toBeNull()
+        const reordered = gather(first.modules, first.folders, [...bots].reverse())!
+        expect(reordered.folders[0]).toMatchObject({ id: first.folders[0].id, name: '[링크 : 이름 없음, Bee]', nodeOnlyLinkBotIds: ['A', 'B'] })
+        expect(gather(reordered.modules, reordered.folders, [...bots].reverse())).toBeNull()
+    })
+
+    it('moves a shared group to the remaining bot when the other bot is trashed', () => {
+        n = 0
+        const bots = [{ chaId: 'A', name: 'A', modules: ['x', 'y'] }, { chaId: 'B', name: 'B', modules: ['x', 'y'] }]
+        const first = gather([m('x'), m('y')], [], bots)!
+        const second = gather(first.modules, first.folders, [bots[0], { ...bots[1], trashTime: 1 }])!
+        expect(second.folders).toMatchObject([{ name: '[링크 : A]', nodeOnlyLinkBotIds: ['A'], moduleIds: ['x', 'y'] }])
+        expect(second.folders.some((folder) => folder.nodeOnlyLinkBotIds?.includes('B'))).toBe(false)
+    })
+
+    it('releases a user folder nested under a bot folder', () => {
+        n = 0
+        const first = gather([m('a'), m('b')], [], [{ chaId: 'A', name: 'A', modules: ['a', 'b'] }])!
+        const parent = first.folders.find((folder) => folder.nodeOnlyLinkBotIds?.[0] === 'A')!
+        const nested = { id: 'U', name: 'Mine', moduleIds: [], nodeOnlyParentFolderId: parent.id }
+        const second = gather([...first.modules, m('mine', 'U')], [...first.folders, nested], [{ chaId: 'A', name: 'A', modules: ['a', 'b', 'mine'] }])!
+        expect(second.folders.find((folder) => folder.id === 'U')?.nodeOnlyParentFolderId).toBeUndefined()
+        expect(second.modules.find((module) => module.id === 'mine')?.folderId).toBe('U')
+    })
+
+    it('renames, dissolves trashed bots, and supports two qualifying bots', () => {
+        n = 0
+        const modules = [m('a'), m('b'), m('c'), m('d')]
+        const bots = [{ chaId: 'A', name: 'A', modules: ['a', 'b'] }, { chaId: 'B', name: 'B', modules: ['c', 'd'] }]
+        const first = gather(modules, [], bots)!
+        expect(first.folders.filter((folder) => folder.nodeOnlyLinkBotIds).map((folder) => folder.name).sort()).toEqual(['[링크 : A]', '[링크 : B]'])
+        const renamed = gather(first.modules, first.folders, [{ ...bots[0], name: 'New' }, bots[1]])!
+        expect(renamed.folders.find((folder) => folder.nodeOnlyLinkBotIds?.[0] === 'A')?.name).toBe('[링크 : New]')
+        const trashed = gather(renamed.modules, renamed.folders, [{ ...bots[0], trashTime: 1 }, bots[1]])!
+        expect(trashed.folders.some((folder) => folder.nodeOnlyLinkBotIds?.[0] === 'A')).toBe(false)
+        expect(trashed.modules.filter((module) => ['a', 'b'].includes(module.id)).every((module) => !module.folderId)).toBe(true)
+        expect(botLinkFolderName(['  '])).toBe('[링크 : 이름 없음]')
+    })
 
     it('moves a loose Proton module into [링크] and one linked by hand into [링크2]; a user folder and its modules stay', () => {
         n = 0

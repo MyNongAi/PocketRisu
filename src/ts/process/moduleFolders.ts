@@ -10,10 +10,12 @@ export interface ModuleFolder {
         kind: 'module'
         key: string
     }
-    /** The [링크] folder of modules bots carry as their own (linkedModuleFolder.ts). */
+    /** Automatic [링크], [링크2], or bot-specific link folder (linkedModuleFolder.ts). */
     nodeOnlyLinkFolder?: boolean
     /** 'manual': the [링크2] folder, modules linked by hand (linkedModuleFolder.ts). */
     nodeOnlyLinkKind?: 'manual'
+    /** Ordered bot IDs for an automatic link folder (2026-11-20). */
+    nodeOnlyLinkBotIds?: string[]
     /** Explicit visual order (moduleSort.ts). */
     sortOrder?: number
     /** Held at the top of the catalog (moduleSort.ts). */

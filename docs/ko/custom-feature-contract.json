@@ -2142,6 +2142,8 @@
         { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "export const LINK_FOLDER_NAME = '[링크]'" },
         { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "export const MANUAL_LINK_FOLDER_NAME = '[링크2]'" },
         { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "export function linkKindOf(" },
+        { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "export const botLinkFolderName =" },
+        { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "nodeOnlyLinkBotIds: ids" },
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "if (character.modules.includes(moduleId)) rememberActivation(moduleId)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{#if folder.nodeOnlyLinkFolder}" }
       ],
@@ -2719,7 +2721,7 @@
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "folderDepth(folder, folders) < maxFolderDepth" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "<div class=\"@container/folders flex flex-col gap-2\" bind:this={rootEl}" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "<FolderIcon size={16} class=\"shrink-0 text-textcolor2 @max-xs/folders:hidden\"/>" },
-        { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "!(folder.duplicateCandidate && holdsLinked.has(folder.id))" }
+        { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "!(folder.duplicateCandidate && folderKind(parent) && holdsLinked.has(folder.id))" }
       ],
       "regressionTests": [
         "src/ts/folders.test.ts",

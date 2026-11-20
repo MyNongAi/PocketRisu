@@ -1160,10 +1160,12 @@ export interface PromptPresetFolder {
     moduleIds?: string[]
     /** Shown inside this folder (display-only nesting; FolderedList). */
     nodeOnlyParentFolderId?: string
-    /** The [링크] folder of linked modules (linkedModuleFolder.ts); the UI draws a green chain. */
+    /** Automatic module link folder (linkedModuleFolder.ts); the UI draws a green chain. */
     nodeOnlyLinkFolder?: boolean
     /** 'manual': the [링크2] folder, modules linked by hand (linkedModuleFolder.ts). */
     nodeOnlyLinkKind?: 'manual'
+    /** Ordered bot IDs for an automatic link folder (2026-11-20). */
+    nodeOnlyLinkBotIds?: string[]
     /** The [프롬] folder, a preset's folder in it, or its 프롬 없음 folder (presetModuleFolder.ts). */
     nodeOnlyPresetFolder?: 'root' | 'preset' | 'orphans'
     nodeOnlyPresetName?: string

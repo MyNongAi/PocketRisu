@@ -20,9 +20,13 @@ import { normalizeDuplicateName } from '../sourceCollectionDuplicates'
 // Linked modules with near-duplicate names that sit loose in a link folder get
 // their own [유사 후보] folder inside it. A module no bot links any more leaves
 // its link folder for the top level, and an empty link folder goes.
+// 2026-11-20: two gatherable modules linked by the same set of bots sit in a
+// top-level [링크 : 봇 제목, ...] folder, tracked by nodeOnlyLinkBotIds.
 
 export const LINK_FOLDER_NAME = '[링크]'
 export const MANUAL_LINK_FOLDER_NAME = '[링크2]'
+// Names follow the order of DBState.db.characters.
+export const botLinkFolderName = (names: readonly string[]) => `[링크 : ${names.map((name) => name.trim() || '이름 없음').join(', ')}]`
 /** The name it carried on 2026-10-07/08; the UI now draws the green chain itself. */
 const LEGACY_LINK_FOLDER_NAME = '🔗 [링크]'
 
@@ -50,7 +54,7 @@ export function linkKindOf(module: { nodeOnlyProtonShare?: string, nodeOnlyProto
 }
 
 function folderKind(folder: ModuleFolder): LinkKind | null {
-    if (!folder.nodeOnlyLinkFolder) return null
+    if (!folder.nodeOnlyLinkFolder || folder.nodeOnlyLinkBotIds) return null
     return folder.nodeOnlyLinkKind === 'manual' ? 'manual' : 'auto'
 }
 
@@ -65,6 +69,7 @@ export function gatherLinkedModules<T extends GatherModule>(
     folders: unknown,
     linked: ReadonlySet<string>,
     createId: () => string,
+    characters: readonly ({ chaId?: string, name?: string, modules?: string[], trashTime?: number } | null | undefined)[] = [],
 ): { modules: T[], folders: ModuleFolder[] } | null {
     const current = normalizeModuleFolders(folders)
     const byId = new Map(current.map((folder) => [folder.id, folder]))
@@ -79,6 +84,15 @@ export function gatherLinkedModules<T extends GatherModule>(
     const linkIdFor = (kind: LinkKind) => (linkIds[kind] ||= createId())
     let changed = false
 
+    const activeBots = characters.filter((bot): bot is NonNullable<typeof bot> => !!bot?.chaId && !bot.trashTime)
+    const owners = new Map<string, string[]>()
+    for (const bot of activeBots) for (const id of new Set(bot.modules ?? [])) {
+        const ids = owners.get(id) ?? []
+        if (!ids.includes(bot.chaId!)) owners.set(id, [...ids, bot.chaId!])
+    }
+    const botSetKey = (ids: readonly string[]) => JSON.stringify([...ids].sort())
+    const botFolders = new Map(current.filter((folder) => folder.nodeOnlyLinkBotIds).map((folder) => [botSetKey(folder.nodeOnlyLinkBotIds!), folder]))
+
     // The link folder a folder belongs to: itself, or the one a generated
     // [유사 후보] folder sits in.
     const areaOf = (folder: ModuleFolder | undefined): LinkKind | null => {
@@ -89,16 +103,41 @@ export function gatherLinkedModules<T extends GatherModule>(
         return parent ? folderKind(parent) : null
     }
 
+    const eligible = (module: T) => {
+        const folder = module.folderId ? byId.get(module.folderId) : undefined
+        return !folder || !!areaOf(folder) || !!folder.nodeOnlyLinkBotIds
+    }
+    const botGroups = new Map<string, { ids: string[], count: number }>()
+    for (const module of modules) {
+        if (!linked.has(module.id) || !eligible(module)) continue
+        const ids = owners.get(module.id)
+        if (!ids?.length) continue
+        const key = botSetKey(ids)
+        const group = botGroups.get(key)
+        if (group) group.count++
+        else botGroups.set(key, { ids, count: 1 })
+    }
+    const botTargets = new Map([...botGroups].filter(([, group]) => group.count >= 2)
+        .map(([key, group]) => [key, botFolders.get(key)?.id ?? createId()]))
+
     let nextModules = modules.map((module) => {
         const folder = module.folderId ? byId.get(module.folderId) : undefined
         const area = areaOf(folder)
         if (linked.has(module.id)) {
+            const owner = owners.get(module.id)
+            // A module in a folder of the user's stays there (and was not counted).
+            const botTarget = owner?.length && eligible(module) ? botTargets.get(botSetKey(owner)) : undefined
+            if (botTarget) {
+                if (module.folderId === botTarget) return module
+                changed = true
+                return { ...module, folderId: botTarget }
+            }
             const kind = linkKindOf(module)
-            if (folder && (!area || area === kind)) return module
+            if (folder && !folder.nodeOnlyLinkBotIds && (!area || area === kind)) return module
             changed = true
             return { ...module, folderId: linkIdFor(kind) }
         }
-        if (folder && folderKind(folder)) {
+        if (folder && (folderKind(folder) || folder.nodeOnlyLinkBotIds)) {
             changed = true
             return { ...module, folderId: undefined }
         }
@@ -132,7 +171,7 @@ export function gatherLinkedModules<T extends GatherModule>(
         const parent = folder.nodeOnlyParentFolderId ? byId.get(folder.nodeOnlyParentFolderId) : undefined
         // In a link folder only its own [유사 후보] folders stay, while they
         // hold a linked module; a folder of the user's comes back out.
-        if (parent && folderKind(parent) && !(folder.duplicateCandidate && holdsLinked.has(folder.id))) {
+        if (parent?.nodeOnlyLinkFolder && !(folder.duplicateCandidate && folderKind(parent) && holdsLinked.has(folder.id))) {
             changed = true
             const { nodeOnlyParentFolderId: _dropped, ...rest } = folder
             return rest
@@ -143,6 +182,24 @@ export function gatherLinkedModules<T extends GatherModule>(
 
     const explicitOrders = current.map((folder) => folder.sortOrder).filter((order): order is number => Number.isFinite(order))
     let top = explicitOrders.length > 0 ? Math.min(...explicitOrders) : undefined
+    const names = new Map(activeBots.map((bot) => [bot.chaId!, bot.name ?? '']))
+    for (const [key, id] of botTargets) {
+        const ids = botGroups.get(key)!.ids
+        const name = botLinkFolderName(ids.map((botId) => names.get(botId) ?? ''))
+        const existingBotFolder = botFolders.get(key)
+        if (!existingBotFolder) {
+            nextFolders = [{ id, name, moduleIds: [], nodeOnlyLinkFolder: true, nodeOnlyLinkBotIds: ids, ...(top !== undefined ? { sortOrder: --top } : {}) }, ...nextFolders]
+            changed = true
+        } else if (existingBotFolder.name !== name || existingBotFolder.nodeOnlyParentFolderId
+            || JSON.stringify(existingBotFolder.nodeOnlyLinkBotIds) !== JSON.stringify(ids)) {
+            nextFolders = nextFolders.map((folder) => folder.id === id ? { ...folder, name, nodeOnlyLinkBotIds: ids, nodeOnlyParentFolderId: undefined } : folder)
+            changed = true
+        }
+    }
+    for (const [key, folder] of botFolders) if (!botTargets.has(key)) {
+        nextFolders = nextFolders.filter((entry) => entry.id !== folder.id)
+        changed = true
+    }
     for (const kind of ['manual', 'auto'] as const) {
         const linkId = linkIds[kind]
         if (!linkId) continue
@@ -168,7 +225,7 @@ export function gatherLinkedModules<T extends GatherModule>(
     }
     if (!changed) return null
 
-    const linkFolderIds = new Set([linkIds.auto, linkIds.manual].filter(Boolean))
+    const linkFolderIds = new Set([...botTargets.values(), linkIds.auto, linkIds.manual].filter(Boolean))
     const synchronized = synchronizeModuleFolderMembership(nextModules, nextFolders, { importLegacyWhenFolderIdsEmpty: false })
     // A generated folder that lost its members to a link folder goes, as
     // after a drag; a link folder itself stays while anything is in or under it.
