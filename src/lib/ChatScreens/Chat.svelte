@@ -1,6 +1,7 @@
 <script lang="ts">
     import { reissueMessageIds, retitleChatFromLastInput } from "src/ts/chatClone";
     import { clearReplyInProgress } from "src/ts/chatCopySnapshot";
+    import { folderForChatCopy } from "src/ts/chatBranchFolder";
     import { chatTitleState } from "src/ts/chatTitleState";
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon, MoonIcon } from "@lucide/svelte"
     import { illustrateReply, illustratingReplies, removeIllustrations } from "src/ts/process/illustrationRun"
@@ -1585,20 +1586,12 @@
         await sleep(1)
         const currentChat = DBState.db.characters[view.characterIndex].chats[view.chatIndex]
 
-        if(DBState.db.createFolderOnBranch && !currentChat.folderId){
-            const folderId = v4()
-            DBState.db.characters[view.characterIndex].chatFolders ??= []
-            DBState.db.characters[view.characterIndex].chatFolders.unshift({
-                id: folderId,
-                name: `Branches of ${currentChat.name}`,
-                folded: false,
-            })
-            currentChat.folderId = folderId
-        }
+        const folderId = folderForChatCopy(DBState.db.characters[view.characterIndex], currentChat, idx + 1, DBState.db.createFolderOnBranch, v4)
         
         const currentMessage = currentChat.message[idx]
         // Branched while the chat streams: the branch itself is not being answered.
         const newChat = clearReplyInProgress($state.snapshot(currentChat))
+        newChat.folderId = folderId
         newChat.name = createChatCopyName(newChat.name, 'Branch')
         newChat.id = v4()
         newChat.message = newChat.message.slice(0, idx + 1)

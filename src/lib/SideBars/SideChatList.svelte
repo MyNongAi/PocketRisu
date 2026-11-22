@@ -379,7 +379,7 @@
                                 newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
-                                newChat.folderId = folderForChatCopy(chara, chara.chats[chatIdx], DBState.db.createFolderOnBranch, v4)
+                                newChat.folderId = folderForChatCopy(chara, chara.chats[chatIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)
                                 // The unsent text in the input goes along (the user's request, 2026-10-10);
                                 // before a send pushes its input, that input goes too.
                                 if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
@@ -489,7 +489,7 @@
                         newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
-                        newChat.folderId = folderForChatCopy(chara, chara.chats[i], DBState.db.createFolderOnBranch, v4)
+                        newChat.folderId = folderForChatCopy(chara, chara.chats[i], newChat.message.length, DBState.db.createFolderOnBranch, v4)
                         // The unsent text in the input goes along (the user's request, 2026-10-10);
                         // before a send pushes its input, that input goes too.
                         if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
