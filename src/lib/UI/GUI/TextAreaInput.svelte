@@ -20,6 +20,9 @@
     class:h-56={height === 'default' && $textAreaSize === 4}
     class:h-60={height === 'default' && $textAreaSize === 5}
     class:h-full={height === 'full'}
+    class:border-blue-400={koActive}
+    class:ring-1={koActive}
+    class:ring-blue-400={koActive}
     class:min-h-20={height === '20' || (height === 'default' && $textAreaSize === -5)}
     class:min-h-24={height === '24' || (height === 'default' && $textAreaSize === -4)}
     class:min-h-28={height === '28' || (height === 'default' && $textAreaSize === -3)}
@@ -52,7 +55,7 @@
             value={draft}
             oninput={(e) => {
                 if(!optimaizedInput){
-                    value = e.currentTarget.value
+                    writeShown(e.currentTarget.value)
                     onInput()
                     return
                 }
@@ -71,7 +74,7 @@
                 ){
                     e.preventDefault()
                     commitDraft()
-                    popUpEditorStore.value = value
+                    popUpEditorStore.value = shownValue
                     popUpEditorStore.mode = 'default'
                     popUpEditorStore.language = popupLanguage
                     popUpEditorStore.open = true
@@ -89,7 +92,7 @@
                 if(DBState.db.longPressToPopupEditor){
                     e.preventDefault()
                     commitDraft()
-                    popUpEditorStore.value = value
+                    popUpEditorStore.value = shownValue
                     popUpEditorStore.mode = 'default'
                     popUpEditorStore.language = popupLanguage
                     popUpEditorStore.open = true
@@ -108,7 +111,7 @@
     <div
         class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto px-4 py-2 wrap-break-word whitespace-pre-wrap"
         contenteditable="true"
-        bind:textContent={value}
+        bind:textContent={() => shownValue, (next) => writeShown(next ?? '')}
         onkeydown={async (e) => {
             if(
                 (e.ctrlKey || e.shiftKey || e.altKey)
@@ -116,7 +119,7 @@
             ){
                 e.preventDefault()
                 commitDraft()
-                popUpEditorStore.value = value
+                popUpEditorStore.value = shownValue
                 popUpEditorStore.mode = 'default'
                 popUpEditorStore.language = popupLanguage
                 popUpEditorStore.open = true
@@ -135,7 +138,7 @@
             if(DBState.db.longPressToPopupEditor){
                 e.preventDefault()
                 commitDraft()
-                popUpEditorStore.value = value
+                popUpEditorStore.value = shownValue
                 popUpEditorStore.mode = 'default'
                 popUpEditorStore.language = popupLanguage
                 popUpEditorStore.open = true
@@ -158,7 +161,7 @@
         }}
         bind:this={inputDom}
         translate="no"
-    >{value ?? ''}</div>
+    >{shownValue}</div>
 {/if}
     {#if resizable}
         <!-- In the text's own corner, not the button row (the user's request, 2026-10-28). -->
@@ -200,6 +203,13 @@
             <!-- Set aside while finding, so the find field keeps room in a narrow panel. -->
             {#if !findOpen}
             <div class="ml-auto flex shrink-0 items-center gap-0.5" data-field-actions>
+            {#if koView}
+                <!-- KO-VIEW (2026-11-22): the toggle only appears on opted-in fields. -->
+                <button type="button" class="p-1 rounded hover:text-textcolor transition-colors disabled:opacity-40 min-w-6" title={koActive ? language.koViewEnglish : language.koViewKorean} aria-label={koActive ? language.koViewEnglish : language.koViewKorean} disabled={koBusy} onclick={toggleKo}>
+                    {#if koBusy}<LoaderCircleIcon size={16} class="animate-spin" />{:else}{koActive ? 'A' : '가'}{/if}
+                </button>
+                {#if stale}<button type="button" class="rounded bg-amber-500/15 px-1 text-xs text-amber-600" onclick={resolveStale}>{language.koViewStale}</button>{/if}
+            {/if}
             <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.copy} aria-label={language.copy} onclick={copyValue}>
                 {#if copied}
                     <CheckIcon size={16} class="text-green-500" />
@@ -207,9 +217,9 @@
                     <CopyIcon size={16} />
                 {/if}
             </button>
-            <button type="button" class="p-1 rounded hover:text-red-500 transition-colors" title={language.reset} aria-label={language.reset} onclick={resetValue}>
+            {#if !koActive}<button type="button" class="p-1 rounded hover:text-red-500 transition-colors" title={language.reset} aria-label={language.reset} onclick={resetValue}>
                 <RefreshCwIcon size={16} />
-            </button>
+            </button>{/if}
             <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.hotkeyDesc.popupEditor} aria-label={language.hotkeyDesc.popupEditor} onclick={openPopupEditor}>
                 <Maximize2 size={16} />
             </button>
@@ -226,6 +236,10 @@
     </div>
 </div>
 
+<script module lang="ts">
+    const koFieldViews = new Map<string, boolean>()
+</script>
+
 <script lang="ts">
     import { textAreaSize, textAreaTextSize } from 'src/ts/gui/guisize'
     import { highlighter, getNewHighlightId, removeHighlight, AllCBS } from 'src/ts/gui/highlight'
@@ -234,11 +248,13 @@
   import { DBState, disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte';
   import { isMobile } from 'src/ts/platform'
     import { hotkeyMatches } from 'src/ts/hotkey';
-    import { Maximize2, CopyIcon, CheckIcon, RefreshCwIcon, SearchIcon, ChevronUpIcon, ChevronDownIcon, XIcon } from '@lucide/svelte'
+    import { Maximize2, CopyIcon, CheckIcon, RefreshCwIcon, SearchIcon, ChevronUpIcon, ChevronDownIcon, XIcon, LoaderCircleIcon } from '@lucide/svelte'
     import ResizeCorner from './ResizeCorner.svelte'
     import TextareaMarks from './TextareaMarks.svelte'
     import { findTextMatches, MAX_TEXT_MATCHES, stepMatch } from 'src/ts/gui/textMatches'
-    import { alertConfirm } from 'src/ts/alert'
+    import { alertConfirm, alertSelect, notifyError } from 'src/ts/alert'
+    import { fingerprint, isKoStale, setKoEntry, type KoOwner } from 'src/ts/koView'
+    import { translateKoView } from 'src/ts/koViewTranslate'
     import { isSecureContext } from 'src/ts/secureContext'
     import { language } from 'src/lang'
     interface Props {
@@ -267,6 +283,7 @@
         searchText?: string;
         /** A find button in the action bar opens a find bar for this field. */
         findable?: boolean;
+        koView?: { owner: KoOwner & { chaId?: string, id?: string }, key: string };
     }
 
     let {
@@ -288,7 +305,8 @@
         actionBar = undefined,
         resizeKey = undefined,
         searchText = '',
-        findable = false
+        findable = false,
+        koView = undefined
     }: Props = $props();
 
     // Every field gets the corner triangle (the user's request, 2026-10-26)
@@ -298,6 +316,52 @@
     // `actionBar` prop overrides per-field; otherwise follow the accessibility toggle.
     const showActionBar = $derived(actionBar ?? DBState.db.showInputActionBar ?? true)
     let copied = $state(false)
+    let localKoActive = $state(false)
+    let koBusy = $state(false)
+    const viewKey = $derived(koView && (koView.owner.chaId || koView.owner.id) ? `${koView.owner.chaId || koView.owner.id}:${koView.key}` : undefined)
+    const koActive = $derived(!!koView && localKoActive)
+    $effect(() => { localKoActive = viewKey ? koFieldViews.get(viewKey) === true : false })
+    const shownValue = $derived(koActive ? (koView?.owner.nodeOnlyKo?.[koView.key]?.text ?? '') : (value ?? ''))
+    const stale = $derived(!!koView && isKoStale(koView.owner.nodeOnlyKo?.[koView.key], value ?? ''))
+    function setView(next: boolean) {
+        if (viewKey) koFieldViews.set(viewKey, next)
+        localKoActive = next
+    }
+    function writeShown(next: string) {
+        if (koActive && koView) {
+            const old = koView.owner.nodeOnlyKo?.[koView.key]
+            setKoEntry(koView.owner, koView.key, { text: next, src: old?.src ?? fingerprint(value ?? '') })
+        } else value = next
+    }
+    async function makeKorean() {
+        if (!koView) return false
+        koBusy = true
+        try {
+            const source = value ?? ''
+            const text = await translateKoView(source)
+            setKoEntry(koView.owner, koView.key, { text, src: fingerprint(source) })
+            return true
+        } catch (error) {
+            notifyError(error instanceof Error && error.message === 'translator-none' ? language.koViewPickTranslator : language.koViewFailed)
+            return false
+        } finally { koBusy = false }
+    }
+    async function toggleKo() {
+        commitDraft()
+        if (koActive) setView(false)
+        else if (koView && (koView.owner.nodeOnlyKo?.[koView.key] || await makeKorean())) setView(true)
+        closeFind()
+    }
+    async function resolveStale() {
+        if (!koView) return
+        const choice = Number.parseInt(await alertSelect([language.koViewRetranslate, language.koViewMarkMatching, language.cancel]))
+        if (choice === 0) {
+            if (await alertConfirm(language.koViewOverwriteWarning)) await makeKorean()
+        } else if (choice === 1) {
+            const old = koView.owner.nodeOnlyKo?.[koView.key]
+            if (old) setKoEntry(koView.owner, koView.key, { text: old.text, src: fingerprint(value ?? '') })
+        }
+    }
     let copiedTimer: ReturnType<typeof setTimeout> | null = null
     let selectingAutoComplete = $state(0)
     // TODO: Review if highlight prop can change dynamically - if so, this needs to be reactive
@@ -317,11 +381,11 @@
     // written once typing pauses, on blur, and before the page hides.
     // optimaizedInput=false keeps the old write-through for live previews.
     const DRAFT_COMMIT_MS = 250
-    let draft = $state(value ?? '')
+    let draft = $state(untrack(() => shownValue))
     let draftDirty = false
     let draftTimer: ReturnType<typeof setTimeout> | null = null
     $effect(() => {
-        const external = value ?? ''
+        const external = shownValue
         if (!draftDirty) draft = external
     })
     function scheduleDraftCommit() {
@@ -336,8 +400,8 @@
         }
         if (!draftDirty) return
         draftDirty = false
-        if ((value ?? '') !== draft) {
-            value = draft
+        if (shownValue !== draft) {
+            writeShown(draft)
             onInput()
         }
     }
@@ -349,7 +413,7 @@
         }
         draftDirty = false
         draft = next
-        value = next
+        writeShown(next)
         onInput()
     }
 
@@ -492,7 +556,7 @@
     // Open the Monaco popup editor for this field, mirroring the contextmenu/hotkey path.
     const openPopupEditor = () => {
         commitDraft()
-        popUpEditorStore.value = value
+        popUpEditorStore.value = shownValue
         popUpEditorStore.mode = 'default'
         popUpEditorStore.language = popupLanguage
         popUpEditorStore.open = true
@@ -507,7 +571,7 @@
 
     const copyValue = async () => {
         commitDraft()
-        const text = value ?? ''
+        const text = shownValue
         try {
             if(isSecureContext && navigator.clipboard?.writeText){
                 await navigator.clipboard.writeText(text)
@@ -604,12 +668,12 @@
     }
         
     $effect.pre(() => {
-        optiValue = value
+        optiValue = shownValue
     });
     // Re-highlight on a debounce instead of every keystroke, and only when
     // highlighting is actually on for this editor.
     $effect.pre(() => {
-        value
+        shownValue
         if (!highlight || $disableHighlight) return
         if (hlTimer) clearTimeout(hlTimer)
         hlTimer = setTimeout(() => highlighter(highlightDom, highlightId), 200)

@@ -28,6 +28,7 @@ import { creatorsOf, placeImportedByCreator } from "./creatorFolders"
 import { filterBlockedRealmBots, filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
 import { normalizeOnboarding } from "./onboarding"
 import { encodeRccCard } from "./rccCard"
+import { validKoMap } from './koView'
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -1122,6 +1123,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
     }
 
     let ext = safeStructuredClone(data?.extensions ?? {})
+    delete (ext as Record<string, unknown>).pocketrisu
 
     for(const key in ext){
         if(key === 'risuai'){
@@ -1151,6 +1153,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
         emotionImages: emotions,
         bias: bias,
         globalLore: lorebook, //lorebook
+        nodeOnlyKo: validKoMap((data.extensions as any)?.pocketrisu?.ko),
         viewScreen: viewScreen,
         chaId: uuidv4(),
         sdData: sdData,
@@ -1258,6 +1261,7 @@ function convertCharbook(arg:{
         // Clone so the delete-based migration below can't strip fields from the
         // source card object, which may be converted again (e.g. import retry).
         const extensions = safeStructuredClone(book.extensions ?? {})
+        delete extensions.pocketrisu_ko
 
         if(extensions.useProbability && extensions.probability !== undefined && extensions.probability !== 100){
             content = `@@probability ${extensions.probability}\n` + content
@@ -1318,6 +1322,7 @@ function convertCharbook(arg:{
             insertorder: book.insertion_order,
             comment: book.name ?? book.comment ?? "",
             content: content,
+            nodeOnlyKo: validKoMap((book.extensions as any)?.pocketrisu_ko),
             mode: (book.mode as any) ?? "normal",
             alwaysActive: book.constant ?? false,
             selective: book.selective ?? false,
@@ -1354,6 +1359,9 @@ function createBaseV2(char:character) {
         let caseSensitive = ext.risu_case_sensitive ?? false
         ext.risu_activationPercent = lore.activationPercent
         ext.risu_loreCache = lore.loreCache
+        // KO-VIEW (2026-11-22): private reading text rides in an ignored card extension.
+        const loreKo = validKoMap(lore.nodeOnlyKo)
+        if (loreKo) (ext as Record<string, unknown>).pocketrisu_ko = loreKo
 
         charBook.push({
             keys: lore.key.split(',').map(r => r.trim()),
@@ -1431,6 +1439,8 @@ function createBaseV2(char:character) {
             card.data.extensions[key] = char.extentions[key]
         }
     }
+    const cardKo = validKoMap(char.nodeOnlyKo)
+    if (cardKo) (card.data.extensions as Record<string, unknown>).pocketrisu = { ko: cardKo }
     return card
 }
 
@@ -1774,6 +1784,8 @@ export function createBaseV3(char:character){
         let caseSensitive = ext.risu_case_sensitive ?? false
         ext.risu_activationPercent = lore.activationPercent
         ext.risu_loreCache = lore.loreCache
+        const loreKo = validKoMap(lore.nodeOnlyKo)
+        if (loreKo) (ext as Record<string, unknown>).pocketrisu_ko = loreKo
 
         charBook.push({
             ...{
@@ -1867,6 +1879,8 @@ export function createBaseV3(char:character){
             card.data.extensions[key] = char.extentions[key]
         }
     }
+    const cardKo = validKoMap(char.nodeOnlyKo)
+    if (cardKo) (card.data.extensions as Record<string, unknown>).pocketrisu = { ko: cardKo }
     return card
 }
 

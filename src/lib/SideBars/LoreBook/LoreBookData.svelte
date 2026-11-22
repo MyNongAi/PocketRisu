@@ -349,7 +349,8 @@
             <span class="text-textcolor mt-4">{language.insertOrder} <Help key="loreorder"/></span>
             <NumberInput bind:value={value.insertorder} min={0} max={1000}/>
             <span class="text-textcolor mt-4 mb-2">{language.prompt}</span>
-            <TextAreaInput highlight autocomplete="off" bind:value={value.content} className={loreComparisonClass} resizeKey="lorebook" {searchText} findable />
+            <!-- KO-VIEW (2026-11-22): lorebook content only. -->
+            <TextAreaInput highlight autocomplete="off" bind:value={value.content} koView={{ owner: value, key: 'content' }} className={loreComparisonClass} resizeKey="lorebook" {searchText} findable />
             <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens} <span class="whitespace-nowrap" title={language.loreCharCountTitle}>{language.loreCharCount.replace('{}', String(chars.noSpace)).replace('{}', String(chars.withSpace))}</span></span>
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>

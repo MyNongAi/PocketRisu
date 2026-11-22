@@ -1,6 +1,14 @@
 import { helpEn } from "./help.en";
 
 export const languageEnglish = {
+    koViewKorean: 'View in Korean',
+    koViewEnglish: 'View English original',
+    koViewStale: 'Source changed',
+    koViewRetranslate: 'Translate again',
+    koViewMarkMatching: 'Mark as matching',
+    koViewOverwriteWarning: 'Translating again will erase your Korean edits. Continue?',
+    koViewPickTranslator: 'Choose a translator and its language first (Settings → Language)',
+    koViewFailed: 'Could not translate',
     formating: {
         main: "Main Prompt",
         jailbreak: "Jailbreak Prompt",

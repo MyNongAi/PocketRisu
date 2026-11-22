@@ -443,10 +443,11 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         <span class="text-textcolor">{language.characterName}</span>
         <ShInput className="mt-2 mb-4" autocomplete="off" placeholder={language.characterName} bind:value={DBState.db.characters[charIndex].name} />
         <span class="text-textcolor">{language.description} <Help key="charDesc"/></span>
-        <TextAreaInput highlight findable margin="both" autocomplete="off" bind:value={(DBState.db.characters[charIndex] as character).desc}></TextAreaInput>
+        <!-- KO-VIEW (2026-11-22): opted-in character text fields. -->
+        <TextAreaInput highlight findable margin="both" autocomplete="off" bind:value={(DBState.db.characters[charIndex] as character).desc} koView={{ owner: DBState.db.characters[charIndex], key: 'desc' }}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
         <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage"/></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].firstMessage}></TextAreaInput>
+        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].firstMessage} koView={{ owner: DBState.db.characters[charIndex], key: 'firstMessage' }}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
     {/if}
     <span class="text-textcolor">{language.authorNote} <Help key="chatNote"/></span>
@@ -1268,7 +1269,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         </div>
 
         <span class="text-textcolor">{language.exampleMessage} <Help key="exampleMessage"/></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].exampleMessage}></TextAreaInput>
+        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].exampleMessage} koView={{ owner: DBState.db.characters[charIndex], key: 'exampleMessage' }}></TextAreaInput>
 
         <span class="text-textcolor">{language.creatorNotes} <Help key="creatorQuotes"/></span>
         <MultiLangInput bind:value={DBState.db.characters[charIndex].creatorNotes} className="my-2" onInput={() => {
@@ -1276,21 +1277,21 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         }}></MultiLangInput>
 
         <span class="text-textcolor">{language.systemPrompt} <Help key="systemPrompt"/></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].systemPrompt}></TextAreaInput>
+        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].systemPrompt} koView={{ owner: DBState.db.characters[charIndex], key: 'systemPrompt' }}></TextAreaInput>
 
         <span class="text-textcolor">{language.replaceGlobalNote} <Help key="replaceGlobalNote"/></span>
-        <TextAreaInput highlight findable margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].replaceGlobalNote}></TextAreaInput>
+        <TextAreaInput highlight findable margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].replaceGlobalNote} koView={{ owner: DBState.db.characters[charIndex], key: 'replaceGlobalNote' }}></TextAreaInput>
 
         <span class="text-textcolor mt-2">{language.additionalText} <Help key="additionalText" /></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].additionalText}></TextAreaInput>
+        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].additionalText} koView={{ owner: DBState.db.characters[charIndex], key: 'additionalText' }}></TextAreaInput>
 
         {#if DBState.db.showUnrecommended || DBState.db.characters[charIndex].personality.length > 3}
             <span class="text-textcolor">{language.personality} <Help key="personality" unrecommended/></span>
-            <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].personality}></TextAreaInput>
+            <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].personality} koView={{ owner: DBState.db.characters[charIndex], key: 'personality' }}></TextAreaInput>
         {/if}
         {#if DBState.db.showUnrecommended || DBState.db.characters[charIndex].scenario.length > 3}
             <span class="text-textcolor">{language.scenario} <Help key="scenario" unrecommended/></span>
-            <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].scenario}></TextAreaInput>
+            <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].scenario} koView={{ owner: DBState.db.characters[charIndex], key: 'scenario' }}></TextAreaInput>
         {/if}
 
         <span class="text-textcolor mt-2">{language.defaultVariables} <Help key="defaultVariables" /></span>
@@ -1343,7 +1344,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                 {#each DBState.db.characters[charIndex].alternateGreetings as bias, i}
                     <tr>
                         <td class="font-medium truncate">
-                            <TextAreaInput highlight bind:value={DBState.db.characters[charIndex].alternateGreetings[i]} placeholder="..." fullwidth />
+                            <TextAreaInput highlight bind:value={DBState.db.characters[charIndex].alternateGreetings[i]} koView={{ owner: DBState.db.characters[charIndex], key: `alternateGreetings.${i}` }} placeholder="..." fullwidth />
                         </td>
                         <th class="font-medium cursor-pointer w-8">
                             <div class="flex flex-col items-center">

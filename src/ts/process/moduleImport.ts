@@ -15,6 +15,7 @@ import { runImportBatch, runImportTask, type ImportProgressReporter } from "../i
 import type { CharxDestination } from "../charxPreflight"
 import { planLargeCharxImport } from "../largeCharxImport"
 import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "../importTransaction"
+import { sanitizeKoEntries } from '../koView'
 
 export interface ImportModuleFileOptions {
     suppressSuccess?: boolean
@@ -74,6 +75,8 @@ export async function importModuleFile(
         if (plan.kind === 'guarded') return importLargeModuleCharx(file, options, plan.destination)
     }
     const finish = (module: RisuModule) => {
+        // KO-VIEW (2026-11-22): module entries travel whole; validate untrusted maps on import.
+        sanitizeKoEntries(module.lorebook ?? [])
         // Nothing awaits between this check and the insert, so a cancel either
         // stops the import here or the module is registered for the rollback.
         options.importScope?.check()

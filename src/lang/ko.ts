@@ -1,6 +1,14 @@
 import { helpKo } from "./help.ko";
 
 export const languageKorean = {
+  koViewKorean: '한국어로 보기',
+  koViewEnglish: '영어 원문 보기',
+  koViewStale: '원문 바뀜',
+  koViewRetranslate: '다시 번역',
+  koViewMarkMatching: '맞음으로 표시',
+  koViewOverwriteWarning: '다시 번역하면 고친 한국어가 사라집니다. 계속할까요?',
+  koViewPickTranslator: '설정 → 언어에서 번역기와 번역기 언어를 먼저 골라 주세요',
+  koViewFailed: '번역하지 못했습니다',
   geminiRelayMode: "Gemini 요청 경로",
   geminiRelayOff: "끄기",
   geminiRelayUs: "미국 중계",

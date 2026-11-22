@@ -1896,6 +1896,8 @@ export interface customscript{
 export type triggerscript = triggerscriptMain
 
 export interface loreBook{
+    /** KO-VIEW: local Korean reading text, excluded from model prompts. */
+    nodeOnlyKo?: import('../koView').KoMap
     key:string
     secondkey:string
     insertorder: number
@@ -1957,6 +1959,8 @@ export interface ArchivedCharacterStub{
 }
 
 export interface character{
+    /** KO-VIEW: local Korean reading text, excluded from model prompts. */
+    nodeOnlyKo?: import('../koView').KoMap
     type?:"character"
     name:string
     /** PocketRisu-only private memo for this bot (MemoDialog). Never put in a prompt or a card export. */

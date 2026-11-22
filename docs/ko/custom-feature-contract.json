@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-20",
+  "updatedAt": "2026-11-22",
   "features": [
     {
       "id": "CHAT-LIST-RECENT",
@@ -39,6 +39,18 @@
       "regressionTests": [
         "src/ts/chatListOrder.test.ts"
       ]
+    },
+    {
+      "id": "KO-VIEW",
+      "title": "봇과 로어북 한국어 보기",
+      "criticality": "core-ux",
+      "ownerFiles": ["src/ts/koView.ts", "src/ts/koViewTranslate.ts", "src/lib/UI/GUI/TextAreaInput.svelte", "src/lib/SideBars/CharConfig.svelte", "src/lib/SideBars/LoreBook/LoreBookData.svelte", "src/ts/characterCards.ts", "src/ts/process/moduleImport.ts", "src/lang/en.ts", "src/lang/ko.ts"],
+      "requiredMarkers": [
+        { "file": "src/ts/koView.ts", "contains": "KO-VIEW (2026-11-22)" },
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "KO-VIEW (2026-11-22)" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "KO-VIEW (2026-11-22)" }
+      ],
+      "regressionTests": ["src/ts/koView.test.ts", "src/ts/koViewTranslate.test.ts", "src/ts/characterCards.koView.test.ts"]
     },
     {
       "id": "CHAT-SEARCH",
@@ -2502,8 +2514,8 @@
         { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "const findOpen = $derived(findQuery.trim().length > 0)" },
         { "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte", "contains": "<LoreBookData idgroup={idgroup} searchText={needle} " },
         { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "resizeKey=\"lorebook\" {searchText} findable />" },
-        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={(DBState.db.characters[charIndex] as character).desc}>" },
-        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={DBState.db.characters[charIndex].replaceGlobalNote}>" }
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={(DBState.db.characters[charIndex] as character).desc}" },
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={DBState.db.characters[charIndex].replaceGlobalNote}" }
       ],
       "regressionTests": [
         "src/ts/gui/textMatches.test.ts",
