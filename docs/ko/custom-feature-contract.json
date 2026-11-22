@@ -5,6 +5,25 @@
   "updatedAt": "2026-11-20",
   "features": [
     {
+      "id": "CHAT-SEARCH",
+      "title": "봇의 전체 채팅 메시지 검색",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/SideChatList.svelte",
+        "src/lib/SideBars/ChatSearchResults.svelte",
+        "src/ts/chatSearch.ts",
+        "src/ts/gui/chatSearchSource.ts",
+        "src/lang/en.ts",
+        "src/lang/ko.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "CHAT-SEARCH (2026-11-22)" },
+        { "file": "src/ts/chatSearch.ts", "contains": "CHAT-SEARCH (2026-11-22)" },
+        { "file": "src/ts/gui/chatSearchSource.ts", "contains": "CHAT-SEARCH (2026-11-22)" }
+      ],
+      "regressionTests": ["src/ts/chatSearch.test.ts", "src/ts/gui/chatSearchSource.test.ts"]
+    },
+    {
       "id": "PLUGIN-STOP-CUT",
       "title": "플러그인 제공자 요청 중지",
       "criticality": "core-ux",

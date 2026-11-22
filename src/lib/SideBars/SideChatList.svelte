@@ -1,8 +1,11 @@
 <script lang="ts">
-    import { onDestroy, onMount } from "svelte";
+    import { onDestroy, onMount, tick } from "svelte";
     import { v4 } from "uuid";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
-    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, NotebookPenIcon } from "@lucide/svelte";
+    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, NotebookPenIcon, SearchIcon, XIcon } from "@lucide/svelte";
+    import ChatSearchResults from './ChatSearchResults.svelte';
+    import { ChatSearchSource, chatSearchQueries, type SearchHit, type SearchSnapshot } from 'src/ts/gui/chatSearchSource';
+    import { ScrollToMessageStore, MobileSideBar } from 'src/ts/stores.svelte';
     import MemoDialog from "./MemoDialog.svelte";
     import { chatTitleClass, chatTitleState, clearChatTitleManual, markChatTitleManual } from "src/ts/chatTitleState";
     import { retitleChatFromLastInput } from "src/ts/chatClone";
@@ -107,6 +110,61 @@
     let memoOpen = $state(false)
     const hasMemo = $derived(!!(chara?.nodeOnlyMemo?.trim() || chara?.chats?.[shownChatIndex]?.nodeOnlyMemo?.trim()))
     let editMode = $state(false)
+    // CHAT-SEARCH (2026-11-22): the query survives a phone sidebar remount, never a save.
+    let searchInput = $state(chatSearchQueries.get(chara.chaId) ?? '')
+    let searchQuery = $state((chatSearchQueries.get(chara.chaId) ?? "").trim())
+    let searchSnapshot = $state<SearchSnapshot>({ hits: [], count: 0, done: 0, total: 0, failed: 0, reading: false })
+    let searchSource: ChatSearchSource | null = null
+    let searchTimer: ReturnType<typeof setTimeout> | undefined
+    let searchBotId = chara.chaId
+    // The toolbar is too narrow at phone width, so the box takes the whole row
+    // while it is in use and the buttons come back once it is left empty.
+    let searchFocused = $state(false)
+    const searchWide = $derived(searchFocused || !!searchInput)
+    function scheduleSearch() {
+        chatSearchQueries.set(chara.chaId, searchInput)
+        clearTimeout(searchTimer)
+        if (!searchInput.trim()) { clearSearch(); return }
+        searchTimer = setTimeout(() => {
+            searchQuery = searchInput.trim()
+            searchSource ??= new ChatSearchSource(chara)
+            searchSource.search(searchQuery, snapshot => { searchSnapshot = snapshot })
+        }, 250)
+    }
+    function clearSearch() {
+        clearTimeout(searchTimer)
+        searchInput = ''
+        searchQuery = ''
+        chatSearchQueries.delete(chara.chaId)
+        searchSource?.dispose()
+        searchSource = null
+        searchSnapshot = { hits: [], count: 0, done: 0, total: 0, failed: 0, reading: false }
+    }
+    async function openSearchHit(hit: SearchHit) {
+        if (editMode || hit.botId !== chara.chaId) return
+        const index = chara.chats.findIndex(chat => chat?.id === hit.chatId)
+        if (index < 0) return
+        changeChatTo(index)
+        const loaded = await ensureChatHydrated(chara.chats, index, chara.chaId)
+        if (!loaded || chara.chats[index]?._placeholder || chara.chatPage !== index) return
+        const messages = chara.chats[index].message ?? []
+        const found = hit.messageId ? messages.findIndex(message => message?.chatId === hit.messageId) : -1
+        const target = found >= 0 ? found : hit.index
+        if (target < 0 || target >= messages.length) return
+        if ($MobileSideBar > 0) $MobileSideBar = 0
+        await tick()
+        ScrollToMessageStore.value = target
+    }
+    $effect(() => {
+        if (chara.chaId === searchBotId) return
+        clearTimeout(searchTimer)
+        searchSource?.dispose()
+        searchSource = null
+        searchBotId = chara.chaId
+        searchInput = chatSearchQueries.get(searchBotId) ?? ''
+        searchQuery = searchInput.trim()
+        if (searchQuery) scheduleSearch()
+    })
 
     // Safety net: chats whose folderId references a deleted folder would
     // otherwise be invisible (excluded from both the no-folder section and
@@ -224,9 +282,14 @@
         })
     }
 
-    onMount(createStb)
+    onMount(() => {
+        createStb()
+        if (searchQuery) scheduleSearch()
+    })
 
     onDestroy(() => {
+        clearTimeout(searchTimer)
+        searchSource?.dispose()
         if (folderStb) {
             try {
                 folderStb.destroy()
@@ -255,7 +318,7 @@
     }}>{language.newChat}</ShButton>
 
     {#key sorted}
-    <div class="flex flex-col mt-2 overflow-y-auto max-h-80" bind:this={listEle}>
+    <div class="flex flex-col mt-2 overflow-y-auto max-h-80" class:hidden={!!searchQuery} bind:this={listEle}>
         <!-- folder div -->
         <div class="flex flex-col" bind:this={folderEles}>
             <!-- chat folder -->
@@ -555,9 +618,11 @@
         </div>
     </div>
     {/key}
+    {#if searchQuery}<ChatSearchResults snapshot={searchSnapshot} open={openSearchHit}/>{/if}
 
     <div class="border-t border-selected mt-2">
         <div class="flex mt-2 ml-2 items-center">
+            {#if !searchWide}
             <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={() => {
                 exportAllChats()
             }}>
@@ -590,7 +655,18 @@
                 <NotebookPenIcon size={18}/>
                 {#if hasMemo}<span class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-primary" aria-hidden="true"></span>{/if}
             </button>
-            <button class="ml-auto text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={() => {
+            {/if}
+            <div class="flex flex-1 min-w-0 h-7 items-center risu-field-border rounded-md mr-2 px-1">
+                {#if searchInput}
+                    <button class="shrink-0 text-textcolor2" title={language.chatSearchClear} aria-label={language.chatSearchClear} onclick={clearSearch}><XIcon size={14}/></button>
+                {:else}<SearchIcon size={14} class="shrink-0 text-textcolor2"/>{/if}
+                <input class="min-w-0 w-full bg-transparent border-0 outline-none text-sm px-1" type="text" enterkeyhint="search" placeholder={language.search} aria-label={language.search}
+                    value={searchInput} oninput={(event) => { searchInput = event.currentTarget.value; scheduleSearch() }}
+                    onfocus={() => { searchFocused = true }} onblur={() => { searchFocused = false }}
+                    onkeydown={(event) => { if (event.key === 'Escape') { event.preventDefault(); clearSearch(); event.currentTarget.blur() } }}/>
+            </div>
+            {#if !searchWide}
+            <button class="shrink-0 ml-auto text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={() => {
                 if (!chara.chatFolders) {
                     chara.chatFolders = []
                 }
@@ -606,6 +682,7 @@
             }}>
                 <FolderPlusIcon size={18}/>
             </button>
+            {/if}
         </div>
 
         {#if view.character?.chaId !== '§playground' && !deselectedHere}
