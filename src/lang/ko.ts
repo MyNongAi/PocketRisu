@@ -2422,6 +2422,8 @@ export const languageKorean = {
   longPressToPopupEditor: "길게 눌러 팝업 편집기 열기",
   showInputActionBar: "입력창 액션 바 표시",
   createFolderOnBranch: "분기 시 폴더 생성",
+  nodeOnlyChatListRecent: "채팅 목록 최신순 (폴더와 채팅을 섞어서)",
+  nodeOnlyChatListRecentHelp: "끄면 폴더가 위에 고정되고 직접 끌어서 정렬합니다",
   goToChat: "채팅으로 이동",
   duplicatePluginFoundUpdateIt:
     "중복된 플러그인이 발견되었습니다. 기존 플러그인을 업데이트하시겠습니까?",

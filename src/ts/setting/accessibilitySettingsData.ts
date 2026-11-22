@@ -244,6 +244,15 @@ export const accessibilitySettingsItems: SettingItem[] = [
         helpKey: 'createFolderOnBranch',
         keywords: ['create', 'folder', 'branch'],
     },
+    // CHAT-LIST-RECENT (2026-11-22)
+    {
+        id: 'acc.nodeOnlyChatListRecent',
+        type: 'check',
+        labelKey: 'nodeOnlyChatListRecent',
+        bindKey: 'nodeOnlyChatListRecent',
+        helpKey: 'nodeOnlyChatListRecentHelp',
+        keywords: ['chat', 'list', 'recent', 'folder', 'sort'],
+    },
     {
         id: 'acc.hamburgerButtonBottom',
         type: 'check',
@@ -482,6 +491,7 @@ export const accessibilitySidebarItems = pick([
     'acc.hamburgerButtonBottom',
     'acc.hideLeftBarCollapseButton',
     'acc.showModelInSidebar',
+    'acc.nodeOnlyChatListRecent',
     'acc.showPresetInSidebar',
     'acc.showPersonaInSidebar',
     'adv.scrollToActive',

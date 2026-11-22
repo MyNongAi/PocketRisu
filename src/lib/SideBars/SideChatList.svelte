@@ -1,6 +1,7 @@
 <script lang="ts">
-    import { onDestroy, onMount, tick } from "svelte";
+    import { onDestroy, onMount, tick, untrack } from "svelte";
     import { v4 } from "uuid";
+    import { orderChatList } from "src/ts/chatListOrder";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, NotebookPenIcon, SearchIcon, XIcon } from "@lucide/svelte";
     import ChatSearchResults from './ChatSearchResults.svelte';
@@ -177,6 +178,10 @@
     const isOrphanFolder = (folderId: string | null | undefined): boolean =>
         folderId != null && !validFolderIds.has(folderId)
 
+    // CHAT-LIST-RECENT (2026-11-22): streaming text is absent from the order key.
+    const recentMode = $derived(DBState.db.nodeOnlyChatListRecent !== false)
+    const orderInput = $derived(JSON.stringify({ bot: chara.chaId, chats: chara.chats.map(chat => [chat.id, chat.folderId, chat.lastDate]), folders: (chara.chatFolders ?? []).map(folder => folder.id) }))
+    const recentOrder = $derived.by(() => { orderInput; return untrack(() => orderChatList(chara.chats, chara.chatFolders ?? [])) })
     let chatsStb: Sortable[] = []
     let folderStb: Sortable = null
 
@@ -199,6 +204,31 @@
     }
 
     const createStb = () => {
+        if (recentMode) {
+            // The list itself is the top-level drop target (querySelectorAll skips it).
+            for (const container of [listEle, ...listEle.querySelectorAll<HTMLElement>('.risu-chat')]) {
+                chatsStb.push(new Sortable(container, {
+                    group: 'chats', draggable: '>[data-risu-chat-idx]', filter: '.no-sort',
+                    onAdd: event => {
+                        const index = Number((event.item as HTMLElement).dataset.risuChatIdx)
+                        const folder = (event.to as HTMLElement).closest<HTMLElement>('[data-risu-chat-folder-idx]')
+                        const folderIndex = folder ? Number(folder.dataset.risuChatFolderIdx) : -1
+                        const next = folderIndex >= 0 ? chara.chatFolders[folderIndex]?.id ?? null : null
+                        event.item.remove()
+                        if (Number.isInteger(index) && chara.chats[index]) { chara.chats[index].folderId = next; void requestImmediateSave() }
+                        sorted += 1
+                        void tick().then(() => recreateStb())
+                    },
+                    onEnd: event => {
+                        if (event.from !== event.to) return // onAdd restores cross-container moves.
+                        sorted += 1
+                        void tick().then(() => recreateStb())
+                    },
+                    ...sortableOptions, sort: false,
+                }))
+            }
+            return
+        }
         for (let chat of listEle.querySelectorAll('.risu-chat')) {
             chatsStb.push(new Sortable(chat, {
                 group: 'chats',
@@ -282,8 +312,18 @@
         })
     }
 
+    function recreateStb() {
+        for (const stb of chatsStb) { try { stb.destroy() } catch {} }
+        chatsStb = []
+        if (folderStb) { try { folderStb.destroy() } catch {} }
+        folderStb = null
+        if (listEle) createStb()
+    }
+    $effect(() => {
+        if (recentMode) orderInput
+        void tick().then(() => { if (listEle) recreateStb() })
+    })
     onMount(() => {
-        createStb()
         if (searchQuery) scheduleSearch()
     })
 
@@ -307,7 +347,8 @@
         const len = chara.chats.length
         let chats = chara.chats
         const newChat = {
-            message:[] as any[], note:'', name:`New Chat ${len + 1}`, localLore:[] as any[], fmIndex: -1, id: v4(),
+            // CHAT-LIST-RECENT (2026-11-22): creation time is catalog recency.
+            message:[] as any[], note:'', name:`New Chat ${len + 1}`, localLore:[] as any[], fmIndex: -1, id: v4(), lastDate: Date.now(),
             ...newChatModelDefaults()
         }
         chats.unshift(newChat)
@@ -317,16 +358,11 @@
         $ReloadGUIPointer += 1
     }}>{language.newChat}</ShButton>
 
-    {#key sorted}
-    <div class="flex flex-col mt-2 overflow-y-auto max-h-80" class:hidden={!!searchQuery} bind:this={listEle}>
-        <!-- folder div -->
-        <div class="flex flex-col" bind:this={folderEles}>
-            <!-- chat folder -->
-            {#each chara.chatFolders as folder, i}
+    {#snippet folderRow(folder: ChatFolder, i: number, memberChats: Chat[])}
             <div data-risu-chat-folder-idx={i}
                 class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
                 <!-- folder header -->
-                <button 
+                <button
                     onclick={() => {
                         if(!editMode) {
                             chara.chatFolders[i].folded = !folder.folded
@@ -399,11 +435,11 @@
                 </button>
                 <!-- chats in folder -->
                 <div class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded ? 'hidden' : ''}">
-                    {#if chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id).length == 0}
+                    {#if memberChats.length == 0}
                     <span class="no-sort flex justify-center text-textcolor2">Empty</span>
                     <div></div>
                     {:else}
-                    {#each chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id) as chat}
+                    {#each memberChats as chat}
                     {@const chatIdx = chara.chats.indexOf(chat)}
                     <button data-risu-chat-idx={chatIdx} draggable={!editMode} ondragstart={(event) => beginChatRoomDrag(event, chat)} onclick={() => {
                         if(!editMode){
@@ -442,6 +478,7 @@
                                 newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
+                                newChat.lastDate = Date.now()
                                 newChat.folderId = folderForChatCopy(chara, chara.chats[chatIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)
                                 // The unsent text in the input goes along (the user's request, 2026-10-10);
                                 // before a send pushes its input, that input goes too.
@@ -507,12 +544,8 @@
                     {/if}
                 </div>
             </div>
-            {/each}
-        </div>
-        <!-- chat without folder div -->
-        <div class="risu-chat flex flex-col">
-            {#each chara.chats as chat, i}
-            {#if chat.folderId == null || isOrphanFolder(chat.folderId)}
+    {/snippet}
+    {#snippet looseRow(chat: Chat, i: number)}
             <button data-risu-chat-idx={i} draggable={!editMode} ondragstart={(event) => beginChatRoomDrag(event, chat)} onclick={() => {
                 if(!editMode){
                     changeChatTo(i)
@@ -552,6 +585,7 @@
                         newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
+                                newChat.lastDate = Date.now()
                         newChat.folderId = folderForChatCopy(chara, chara.chats[i], newChat.message.length, DBState.db.createFolderOnBranch, v4)
                         // The unsent text in the input goes along (the user's request, 2026-10-10);
                         // before a send pushes its input, that input goes too.
@@ -613,11 +647,42 @@
                     </div>
                 </div>
             </button>
+    {/snippet}
+    <!-- CHAT-LIST-RECENT (2026-11-22): mixed display order. -->
+    {#if recentMode}
+    {#key sorted}
+    <!-- pb-6: room under the last item to drop a chat out of its folder when no chat is loose. -->
+    <div class="risu-chat flex flex-col mt-2 pb-6 overflow-y-auto max-h-80" class:hidden={!!searchQuery} bind:this={listEle}>
+        {#each recentOrder.items as item (item.kind + ':' + item.index)}
+            {#if item.kind === 'folder'}
+                {@render folderRow(chara.chatFolders[item.index], item.index, recentOrder.folderChats[item.index].map(index => chara.chats[index]))}
+            {:else}
+                {@render looseRow(chara.chats[item.index], item.index)}
+            {/if}
+        {/each}
+    </div>
+    {/key}
+    {:else}
+    {#key sorted}
+    <div class="flex flex-col mt-2 overflow-y-auto max-h-80" class:hidden={!!searchQuery} bind:this={listEle}>
+        <!-- folder div -->
+        <div class="flex flex-col" bind:this={folderEles}>
+            <!-- chat folder -->
+            {#each chara.chatFolders as folder, i}
+                {@render folderRow(folder, i, chara.chats.filter(chat => chat.folderId == folder.id))}
+            {/each}
+        </div>
+        <!-- chat without folder div -->
+        <div class="risu-chat flex flex-col">
+            {#each chara.chats as chat, i}
+            {#if chat.folderId == null || isOrphanFolder(chat.folderId)}
+                {@render looseRow(chat, i)}
             {/if}
             {/each}
         </div>
     </div>
     {/key}
+    {/if}
     {#if searchQuery}<ChatSearchResults snapshot={searchSnapshot} open={openSearchHit}/>{/if}
 
     <div class="border-t border-selected mt-2">

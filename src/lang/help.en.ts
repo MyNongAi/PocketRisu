@@ -408,6 +408,7 @@ export const helpEn = {
         autoScrollToNewMessage: "Automatically scroll to a newly arrived message.",
         alwaysScrollToNewMessage: "Always scroll down when a new message arrives, even if you have manually scrolled upward.",
         newMessageButtonStyle: "Choose where and how the \"new message\" button appears.",
+        nodeOnlyChatListRecentHelp: "Turn off to keep folders on top and sort manually by dragging.",
         createFolderOnBranch:
             "Automatically create a folder when branching a chat, grouping the original and branched chats together.",
         hamburgerButtonBottom: "Move the hamburger/menu button to the bottom of the sidebar.",

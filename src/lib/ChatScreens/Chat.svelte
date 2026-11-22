@@ -1594,6 +1594,8 @@
         newChat.folderId = folderId
         newChat.name = createChatCopyName(newChat.name, 'Branch')
         newChat.id = v4()
+        // CHAT-LIST-RECENT (2026-11-22): a branch is new now, regardless of its source.
+        newChat.lastDate = Date.now()
         newChat.message = newChat.message.slice(0, idx + 1)
         // Own message ids for the branch; drops summaries/bookmarks that point past the cut
         reissueMessageIds(newChat, currentChat.message.map(m => m.chatId))

@@ -5,6 +5,42 @@
   "updatedAt": "2026-11-20",
   "features": [
     {
+      "id": "CHAT-LIST-RECENT",
+      "title": "채팅 목록 최신순 (폴더와 채팅 혼합)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatListOrder.ts",
+        "src/lib/SideBars/SideChatList.svelte",
+        "src/ts/process/index.svelte.ts",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/ts/storage/database.svelte.ts",
+        "src/ts/setting/accessibilitySettingsData.ts",
+        "src/lang/en.ts",
+        "src/lang/ko.ts"
+      ],
+      "requiredMarkers": [
+        {
+          "file": "src/ts/chatListOrder.ts",
+          "contains": "CHAT-LIST-RECENT (2026-11-22)"
+        },
+        {
+          "file": "src/lib/SideBars/SideChatList.svelte",
+          "contains": "CHAT-LIST-RECENT (2026-11-22)"
+        },
+        {
+          "file": "src/ts/process/index.svelte.ts",
+          "contains": "CHAT-LIST-RECENT (2026-11-22)"
+        },
+        {
+          "file": "src/lib/ChatScreens/Chat.svelte",
+          "contains": "CHAT-LIST-RECENT (2026-11-22)"
+        }
+      ],
+      "regressionTests": [
+        "src/ts/chatListOrder.test.ts"
+      ]
+    },
+    {
       "id": "CHAT-SEARCH",
       "title": "봇의 전체 채팅 메시지 검색",
       "criticality": "core-ux",

@@ -425,6 +425,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     DBState.db.statics.messages += 1
     nowChatroom.lastInteraction = Date.now()
+    // CHAT-LIST-RECENT (2026-11-22): previews do not change chat recency.
+    if (!arg.preview && !arg.previewPrompt) currentChat.lastDate = Date.now()
     // The indices above address DBState.db for the rest of this send. A save
     // conflict rebase may replace the database (and reorder characters) while
     // streaming, so re-resolve them by id when that happens; the listener is

@@ -816,6 +816,8 @@ export function normalizeDatabase(data:Database){
     data.echoMessage ??= "Echo Message"
     data.echoDelay ??= 0
     data.createFolderOnBranch ??= true
+    // CHAT-LIST-RECENT (2026-11-22): missing means enabled.
+    data.nodeOnlyChatListRecent ??= true
     data.hamburgerButtonBottom ??= false
     data.hideLeftBarCollapseButton ??= false
     data.dynamicModelRegistry ??= true
@@ -1783,6 +1785,7 @@ export interface Database{
     echoMessage?:string
     echoDelay?:number
     createFolderOnBranch?:boolean
+    nodeOnlyChatListRecent?:boolean
     hamburgerButtonBottom?:boolean
     hideLeftBarCollapseButton?:boolean
     enableRemoteSaving?:boolean
