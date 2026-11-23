@@ -10,9 +10,9 @@
     // and the folder array via `onFoldersChange`.
     import type { Snippet } from "svelte";
     import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderInputIcon, FolderOutputIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon, XIcon } from "@lucide/svelte";
-    import { menuTriggerClick, menuTriggerProps } from "src/ts/gui/holdDrag";
+    import { menuTriggerClick, menuTriggerProps, sortableFilter } from "src/ts/gui/holdDrag";
     import { isStrayTouch, touchPressMove, touchPressStart } from "src/ts/gui/touchTap";
-    import type { SortableEvent } from "sortablejs";
+    import type { MoveEvent, SortableEvent } from "sortablejs";
     import { v4 as uuidv4 } from "uuid";
     import { language } from "src/lang";
     import { matchesCatalogText } from "src/ts/gui/catalogSearch";
@@ -285,14 +285,62 @@
         onItemsChange(placementsFromDom(), true);
     }
 
-    function onFolderDrop(orderedIds: string[]) {
+    // NESTED-FOLDER-DRAG (2026-11-23): while a folder is dragged, the folders it
+    // may go into (and its own parent) take it; only those show an empty drop
+    // box under their rows, which otherwise takes no room under every folder.
+    let dropParents = $state<Set<string> | null>(null);
+    function startFolderDrag(key: string) {
+        const moved = folders.find(folder => folder.id === key);
+        if (!moved) return;
+        const parentId = parentOf(moved);
+        dropParents = new Set([...nestTargets(moved).map(folder => folder.id), ...(parentId ? [parentId] : [])]);
+    }
+    function endFolderDrag() {
+        dropParents = null;
+    }
+    function folderDropAllowed(event: MoveEvent) {
+        if (event.related?.className?.includes?.('no-sort')) return false;
+        const parentId = (event.to as HTMLElement).dataset.sortableContainerKey;
+        return !parentId || !dropParents || dropParents.has(parentId);
+    }
+
+    function onFolderDrop(orderedIds: string[], event: SortableEvent) {
+        // NESTED-FOLDER-DRAG (2026-11-23): each child list shares the folder
+        // group, but only a valid destination may change its parent or order.
+        const movedId = (event.item as HTMLElement).dataset.folderKey;
+        const moved = folders.find(folder => folder.id === movedId);
+        const destination = event.to as HTMLElement;
+        const destinationParentId = destination.dataset.sortableContainerKey || undefined;
+        if (moved && (parentOf(moved) || destinationParentId)) {
+            const sourceParentId = parentOf(moved);
+            if (moved.nodeOnlyLinkFolder || moved.nodeOnlyPresetFolder || moved.nodeOnlyFavoritesFolder || inLinkFolder(moved)) return;
+            if (destinationParentId && sourceParentId !== destinationParentId
+                && !nestTargets(moved).some(folder => folder.id === destinationParentId)) return;
+            const parent = destinationParentId ? folders.find(folder => folder.id === destinationParentId) : undefined;
+            if (destinationParentId && !parent) return;
+            const changed = destinationParentId === sourceParentId ? moved : destinationParentId
+                ? { ...moved, nodeOnlyParentFolderId: destinationParentId } : withoutParent(moved);
+            const next = folders.filter(folder => folder.id !== moved.id);
+            const siblingIds = Array.from(destination.children).filter((child): child is HTMLElement => child instanceof HTMLElement)
+                .map(child => child.dataset.folderKey).filter((id): id is string => !!id && id !== moved.id);
+            const nextElement = (event.item as HTMLElement).nextElementSibling as HTMLElement | null;
+            const nextId = nextElement?.dataset.folderKey;
+            const before = nextId && siblingIds.includes(nextId) ? next.findIndex(folder => folder.id === nextId) : -1;
+            const last = siblingIds.length ? next.findIndex(folder => folder.id === siblingIds[siblingIds.length - 1]) : -1;
+            const at = before >= 0 ? before : last >= 0 ? last + 1 : parent ? next.findIndex(folder => folder.id === parent.id) + 1 : next.length;
+            next.splice(at, 0, changed);
+            const placed = interleaveItems ? placementsFromDom() : null;
+            onFoldersChange(next);
+            if (placed) onItemsChange(placed, true);
+            return;
+        }
         // In the interleaved list a folder is placed among single items too:
         // read where it landed before the folder change re-renders the list.
         const placed = interleaveItems ? placementsFromDom() : null;
         // There the folders' order is the page's too: one dropped among single
         // items is not in the folder list's own order.
         const shownIds = interleaveItems
-            ? Array.from(rootEl.querySelectorAll<HTMLElement>('[data-folder-key]')).map(element => element.dataset.folderKey ?? '')
+            ? Array.from(rootEl.querySelectorAll<HTMLElement>('[data-folder-key]:not([data-nested-folder])')).map(element => element.dataset.folderKey ?? '')
             : orderedIds;
         const byId = new Map(folders.map(folder => [folder.id, folder]));
         const ordered = shownIds.map(id => byId.get(id)).filter((folder): folder is PromptPresetFolder => !!folder);
@@ -504,8 +552,10 @@
         disabled={dragDisabled}
         draggable="[data-folder-key]"
         dataAttribute="data-folder-key"
-        options={{ group: 'foldered-list-folders' }}
+        options={{ group: 'foldered-list-folders', onMove: folderDropAllowed, filter: (event: Event) => !!(event.target as Element)?.closest?.('[data-nested-folder]') || !(event.target as Element)?.closest?.('[data-folder-header]') || sortableFilter(event) }}
         onReorder={onFolderDrop}
+        onDragStart={startFolderDrag}
+        onDragEnd={endFolderDrag}
     >
         {#if interleaveItems}
             {#each interleavedBlocks as block (block.kind === 'folder' ? `folder:${block.folderId}` : `root:${block.indexes[0]}`)}
@@ -551,14 +601,14 @@
         {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
         {@const children = (childGroupsByParent.get(folder.id) ?? []).filter((child) => !query || groupHasMatches(child))}
         {@const shownIndexes = [...new Set([...group.indexes, ...nestedIndexesOf(group)])]}
-        <!-- A folder shown inside another has no data-folder-key: only top-level folders drag. -->
-        <div data-folder-key={nested ? undefined : folder.id} data-nested-folder={nested ? folder.id : undefined} class="rounded-md border border-darkborderc bg-darkbg">
+        <!-- NESTED-FOLDER-DRAG (2026-11-23): the child has its own drag key; the outer list filters its press. -->
+        <div data-folder-key={folder.id} data-nested-folder={nested ? folder.id : undefined} class="rounded-md border border-darkborderc bg-darkbg">
             <!-- In a list under 20rem the row icons, gaps and the name took ~155px,
                  which left a folder inside another about 10px of name ("붕." for
                  붕괴; the user's report, 2026-10-28). There the folder icon goes
                  (the chevron and the box show it is a folder), the gaps halve, and
                  a long name takes a second line instead of an ellipsis. -->
-            <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none @max-xs/folders:gap-1 @max-xs/folders:px-1"
+            <div data-folder-header class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none @max-xs/folders:gap-1 @max-xs/folders:px-1"
                 role="button" tabindex="0"
                 onclick={(e) => { if (!isStrayTouch(e)) toggleCollapsed(folder.id) }}
                 onkeydown={(e) => { if (e.key === 'Enter') toggleCollapsed(folder.id) }}>
@@ -588,12 +638,32 @@
                     {/each}
                 </ShSortableList>
             </div>
-            {#if children.length > 0}
-                <!-- Outside the parent's item container, so a drop reads each folder's own rows. -->
-                <div class="flex flex-col gap-2 pl-4 pr-2 pb-2 @max-xs/folders:pl-1.5 @max-xs/folders:pr-1" class:hidden={isCollapsed}>
-                    {#each children as child (child.folder?.id)}
-                        {@render folderGroup(child, true)}
-                    {/each}
+            {#if canHoldFolders(folder) || children.length > 0}
+                <!-- Outside the item container, including when empty, so child folders can be dropped here.
+                     Empty, it has no height until a folder that may go in is dragged (NESTED-FOLDER-DRAG (2026-11-23)). -->
+                <div class:hidden={isCollapsed}>
+                    <ShSortableList
+                        className={children.length > 0
+                            ? 'flex flex-col gap-2 pl-4 pr-2 pb-2 @max-xs/folders:pl-1.5 @max-xs/folders:pr-1'
+                            : dropParents?.has(folder.id)
+                                ? 'flex flex-col min-h-8 ml-4 mr-2 mb-2 rounded-md border border-dashed border-darkborderc @max-xs/folders:ml-1.5 @max-xs/folders:mr-1'
+                                : 'flex flex-col'}
+                        disabled={dragDisabled || isCollapsed}
+                        draggable="[data-folder-key]"
+                        dataAttribute="data-folder-key"
+                        containerKey={folder.id}
+                        options={{ group: 'foldered-list-folders', fallbackOnBody: true, onMove: folderDropAllowed, filter: (event: Event) => {
+                            const header = (event.target as Element)?.closest?.('[data-folder-header]');
+                            return header?.parentElement?.parentElement?.dataset.sortableContainerKey !== folder.id || sortableFilter(event);
+                        } }}
+                        onReorder={onFolderDrop}
+                        onDragStart={startFolderDrag}
+                        onDragEnd={endFolderDrag}
+                    >
+                        {#each children as child (child.folder?.id)}
+                            {@render folderGroup(child, true)}
+                        {/each}
+                    </ShSortableList>
                 </div>
             {/if}
         </div>

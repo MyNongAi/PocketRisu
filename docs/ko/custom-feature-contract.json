@@ -2239,11 +2239,17 @@
         { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "export function linkKindOf(" },
         { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "export const botLinkFolderName =" },
         { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "nodeOnlyLinkBotIds: ids" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "NESTED-FOLDER-DRAG (2026-11-23)" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "containerKey={folder.id}" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "nestTargets(moved).some" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "dropParents?.has(folder.id)" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "onMove: folderDropAllowed" },
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "if (character.modules.includes(moduleId)) rememberActivation(moduleId)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{#if folder.nodeOnlyLinkFolder}" }
       ],
       "regressionTests": [
-        "src/ts/process/linkedModuleFolder.test.ts"
+        "src/ts/process/linkedModuleFolder.test.ts",
+        "src/lib/UI/FolderedList.test.ts"
       ]
     },
     {

@@ -83,6 +83,108 @@ afterEach(async () => {
 })
 
 describe('module folder display interactions', () => {
+    // NESTED-FOLDER-DRAG (2026-11-23): drive the same Sortable callbacks as a pointer drop.
+    async function dragFolder(target: HTMLElement, id: string, destinationKey: string | null, beforeId?: string) {
+        const item = target.querySelector<HTMLElement>(`[data-folder-key="${id}"]`)!;
+        const source = item.parentElement!;
+        const destination = destinationKey === null
+            ? target.querySelector<HTMLElement>('[data-risu-sortable-list]:not([data-sortable-container-key])')!
+            : target.querySelector<HTMLElement>(`[data-sortable-container-key="${destinationKey}"]`)!;
+        const options = mocks.sortableCreate.mock.calls.find(([element]) => element === source)?.[1] as unknown as {
+            onStart: (event: Record<string, unknown>) => void
+            onEnd: (event: Record<string, unknown>) => void
+        };
+        const oldIndex = Array.from(source.children).indexOf(item);
+        options.onStart({ item, from: source });
+        destination.insertBefore(item, beforeId ? destination.querySelector(`[data-folder-key="${beforeId}"]`) : null);
+        const newIndex = Array.from(destination.children).indexOf(item);
+        options.onEnd({ item, from: source, to: destination, oldIndex, newIndex, oldDraggableIndex: oldIndex, newDraggableIndex: newIndex });
+        await tick();
+    }
+
+    it('filters a press on a nested folder from the outer parent drag', async () => {
+        const { target, onFoldersChange } = await renderList({ ...nestedListProps, defaultCollapsed: false });
+        const outer = target.querySelector<HTMLElement>('[data-risu-sortable-list]:not([data-sortable-container-key])')!;
+        const options = mocks.sortableCreate.mock.calls.find(([element]) => element === outer)?.[1] as Sortable.Options;
+        const header = target.querySelector<HTMLElement>('[data-nested-folder="child"] [data-folder-header]')!;
+        expect((options.filter as (event: Event) => boolean)({ target: header } as unknown as Event)).toBe(true);
+        expect((options.filter as (event: Event) => boolean)({ target: target.querySelector('[data-folder-key="top"] [data-folder-header]') } as unknown as Event)).toBe(false);
+        expect(onFoldersChange).not.toHaveBeenCalled();
+    });
+
+    it('reorders sibling folders without moving their parent', async () => {
+        const entries = [{ id: 'top', name: 'Top' }, { id: 'a', name: 'A', nodeOnlyParentFolderId: 'top' },
+            { id: 'b', name: 'B', nodeOnlyParentFolderId: 'top' }];
+        const { target, onFoldersChange } = await renderList({ folders: entries, itemFolderIds: [], itemSearchTexts: [], defaultCollapsed: false, maxFolderDepth: 3 });
+        await dragFolder(target, 'b', 'top', 'a');
+        expect(onFoldersChange.mock.calls[0][0].map((folder: PromptPresetFolder) => folder.id)).toEqual(['top', 'b', 'a']);
+        expect(onFoldersChange.mock.calls[0][0][1].nodeOnlyParentFolderId).toBe('top');
+    });
+
+    it('moves a nested folder into another folder and then to the top level', async () => {
+        const { target, onFoldersChange } = await renderList({ ...nestedListProps, defaultCollapsed: false });
+        await dragFolder(target, 'deep', 'other');
+        expect(onFoldersChange.mock.calls[0][0].find((folder: PromptPresetFolder) => folder.id === 'deep').nodeOnlyParentFolderId).toBe('other');
+        const moved = onFoldersChange.mock.calls[0][0] as PromptPresetFolder[];
+        const second = await renderList({ ...nestedListProps, folders: moved, defaultCollapsed: false });
+        await dragFolder(second.target, 'deep', null, 'top');
+        const out = second.onFoldersChange.mock.calls[0][0] as PromptPresetFolder[];
+        expect(out.find(folder => folder.id === 'deep')?.nodeOnlyParentFolderId).toBeUndefined();
+        expect(out[0].id).toBe('deep');
+    });
+
+    // A drop into its own descendant cannot happen in the page (the folder
+    // holds that list); the hover guard below refuses it before that.
+    it('refuses a drop that would nest deeper than allowed', async () => {
+        const entries = [...nestedFolders, { id: 'otherSub', name: 'Other sub', nodeOnlyParentFolderId: 'other' },
+            { id: 'otherDeep', name: 'Other deep', nodeOnlyParentFolderId: 'otherSub' }];
+        const { target, onFoldersChange } = await renderList({ ...nestedListProps, folders: entries, defaultCollapsed: false });
+        // `child` holds `deep`: inside `otherDeep` (depth 2) that would be depth 4 > 3.
+        await dragFolder(target, 'child', 'otherDeep');
+        expect(onFoldersChange).not.toHaveBeenCalled();
+    });
+
+    function listOptions(target: HTMLElement, key: string | null) {
+        const list = key === null
+            ? target.querySelector<HTMLElement>('[data-risu-sortable-list]:not([data-sortable-container-key])')!
+            : target.querySelector<HTMLElement>(`[data-sortable-container-key="${key}"]`)!;
+        const options = mocks.sortableCreate.mock.calls.filter(([element]) => element === list).at(-1)?.[1] as unknown as {
+            onStart: (event: Record<string, unknown>) => void
+            onEnd: (event: Record<string, unknown>) => void
+            onMove: (event: Record<string, unknown>) => boolean
+        };
+        return { list, options };
+    }
+
+    it('shows an empty drop box only under folders the dragged folder may enter', async () => {
+        const { target } = await renderList({ ...nestedListProps, defaultCollapsed: false });
+        const deepList = () => target.querySelector<HTMLElement>('[data-sortable-container-key="deep"]')!;
+        const otherList = () => target.querySelector<HTMLElement>('[data-sortable-container-key="other"]')!;
+        expect(deepList().className).not.toContain('min-h-8');
+        const { list, options } = listOptions(target, null);
+        const item = target.querySelector<HTMLElement>('[data-folder-key="other"]')!;
+        options.onStart({ item, from: list });
+        await tick();
+        expect(deepList().className).toContain('border-dashed');
+        // Its own empty list takes no drop.
+        expect(otherList().className).not.toContain('min-h-8');
+        options.onEnd({ item, from: list, to: list, oldIndex: 1, newIndex: 1, oldDraggableIndex: 1, newDraggableIndex: 1 });
+        await tick();
+        expect(deepList().className).not.toContain('min-h-8');
+    });
+
+    it('does not let a dragged folder hover into its own descendant', async () => {
+        const { target } = await renderList({ ...nestedListProps, defaultCollapsed: false });
+        const { list, options } = listOptions(target, 'top');
+        const item = target.querySelector<HTMLElement>('[data-folder-key="child"]')!;
+        options.onStart({ item, from: list });
+        await tick();
+        const related = document.createElement('div');
+        expect(options.onMove({ related, to: listOptions(target, 'deep').list })).toBe(false);
+        expect(options.onMove({ related, to: listOptions(target, 'other').list })).toBe(true);
+        expect(options.onMove({ related, to: listOptions(target, null).list })).toBe(true);
+    });
+
     it('passes direct and nested folder rows at every depth to folderActions (2026-11-20)', async () => {
         const { target } = await renderList(nestedListProps)
         expect(folderActionIndexes(target, 'top', 'direct')).toEqual([0])
