@@ -65,4 +65,15 @@ describe('ParseMarkdown display scripts', () => {
     await parsing
     expect(scriptCalls.count).toBe(1)
   })
+
+  // COPY-SKIP-THOUGHTS (2026-11-23): the mark that keeps the thinking out of the
+  // chat copy survives the sanitizer.
+  it('marks the model\'s thinking block for the chat copy to leave out', async () => {
+    const html = await ParseMarkdown('<Thoughts>chain of thought</Thoughts>reply', char, 'notrim', 3, {}, { resolveAssets: false })
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const block = doc.querySelector('details')
+    expect(block?.hasAttribute('data-risu-copy-ignore')).toBe(true)
+    expect(block?.textContent).toContain('chain of thought')
+    expect(doc.body.textContent).toContain('reply')
+  })
 })

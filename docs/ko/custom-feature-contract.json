@@ -2664,6 +2664,8 @@
         "src/lib/ChatScreens/Chat.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "COPY-SKIP-THOUGHTS (2026-11-23)" },
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "<details data-risu-copy-ignore><summary>${language.cot}</summary>" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export async function shrinkClipboardImage(" },
         { "file": "src/ts/chatClipboard.ts", "contains": "return mustConvert || encoded.length < dataUrl.length ? encoded : dataUrl" },
         { "file": "src/ts/chatClipboard.ts", "contains": "clone.src = await toShownDataUrl(imageUrl, imageBox?.width ?? 0, imageBox?.height ?? 0)" },

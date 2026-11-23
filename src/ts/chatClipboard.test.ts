@@ -172,6 +172,23 @@ describe('portable chat clipboard assets', () => {
         expect(html).not.toContain('data:image/png;base64,AA==')
         root.remove()
     })
+
+    // COPY-SKIP-THOUGHTS (2026-11-23): the parser marks the model's thinking block.
+    it('leaves the model\'s thinking out even when it is open, and keeps a bot\'s own details', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<details data-risu-copy-ignore open><summary>생각</summary><p>long chain of thought</p></details>'
+            + '<details open><summary>상태창</summary><p>HP 100</p></details><p>답변 본문</p>'
+        document.body.append(root)
+
+        const html = await buildPortableChatFragment(root)
+
+        expect(html).not.toContain('long chain of thought')
+        expect(html).not.toContain('생각</summary>')
+        expect(html).toContain('상태창')
+        expect(html).toContain('HP 100')
+        expect(html).toContain('답변 본문')
+        root.remove()
+    })
 })
 
 describe('clipboard layout snapshot', () => {

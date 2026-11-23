@@ -1192,7 +1192,11 @@ function parseThoughtsAndTools(data:string){
                 j++
             }
             if (depth === 0) {
-                result += `<details><summary>${language.cot}</summary>${data.substring(i + 10, j - 1)}</details>`
+                // COPY-SKIP-THOUGHTS (2026-11-23): the chat copy and the text log leave the
+                // model's thinking out (data-risu-copy-ignore, chatClipboard.ts): a closed
+                // block still went in whole, and one page of log was too large for the board
+                // (the user: "로그가 1페이지뿐인데 용량초과나서 그냥 생각의사슬은 복사안되는게 좋을듯").
+                result += `<details data-risu-copy-ignore><summary>${language.cot}</summary>${data.substring(i + 10, j - 1)}</details>`
                 i = j + 10
                 continue
             }
