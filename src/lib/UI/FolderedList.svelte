@@ -19,8 +19,6 @@
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
     import { folderDepth, folderTree, foldersMatchingByName, groupByFolder, isFolderCollapsed, shownInside } from "src/ts/folders";
     import { interleaveModuleCatalogGroups } from "src/ts/process/moduleSort";
-    // LEGACY-MODULE-FOLDERS
-    import { interleaveLegacyModuleCatalogGroups } from "src/ts/process/legacyModuleFolderView";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import ShSortableList from "./GUI/ShSortableList.svelte";
     import ShButton from "./GUI/ShButton.svelte";
@@ -57,10 +55,6 @@
          *  top-level folders only). The module list goes deeper, as the bot
          *  list does (the user's request, 2026-10-17). */
         maxFolderDepth?: number;
-        /** LEGACY-MODULE-FOLDERS: hide nesting commands while a flat catalog view is drawn. */
-        flatFolderView?: boolean;
-        /** LEGACY-MODULE-FOLDERS: submit the menu's drawn placements for history and protected storage. */
-        onItemMoveToFolder?: (placements: FolderedItemPlacement[]) => void;
         /** Render items without a folder as ordinary root rows instead of a
          *  synthetic "Uncategorized" folder card. The root remains a drop
          *  target so items can still be dragged out of real folders. */
@@ -70,8 +64,6 @@
         rootItemsFirst?: boolean;
         /** Keep standalone rows and folders in their item-recency order. */
         interleaveItems?: boolean;
-        /** LEGACY-MODULE-FOLDERS: September interleaving priority. */
-        legacyInterleave?: boolean;
         /** Promote one concrete top-level entry without moving every item of
          *  the same kind as a block. These are display-only indexes/IDs. */
         promotedItemIndex?: number;
@@ -140,7 +132,6 @@
         rootItemsStandalone = false,
         rootItemsFirst = false,
         interleaveItems = false,
-        legacyInterleave = false, // LEGACY-MODULE-FOLDERS
         promotedItemIndex = -1,
         promotedFolderId = '',
         favoriteItemIndexes = new Set<number>(),
@@ -174,8 +165,6 @@
         rowContextMenu = false,
         rowHoldMenu = true,
         maxFolderDepth = 1,
-        flatFolderView = false,
-        onItemMoveToFolder,
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
@@ -250,9 +239,7 @@
     const remainingRootIndexes = $derived(rootIndexes.filter((index) => index !== promotedRootIndex));
     const remainingFolderGroups = $derived(displayGroups.filter((group) => group.folder?.id !== promotedFolderGroup?.folder?.id && !!group.folder));
     const interleavedBlocks = $derived(interleaveItems
-        ? (legacyInterleave // LEGACY-MODULE-FOLDERS
-            ? interleaveLegacyModuleCatalogGroups(displayGroups, promotedRootIndex, promotedFolderId)
-            : interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId, favoriteItemIndexes, activeItemIndexes))
+        ? interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId, favoriteItemIndexes, activeItemIndexes)
         : []);
     const displayItemCount = $derived(filteredGroups.reduce((count, group) => count + group.indexes.length, 0));
 
@@ -454,8 +441,6 @@
         // Append at the end of the chosen group.
         const lastInGroup = placements.map(p => p.folderId).lastIndexOf(folderId);
         placements.splice(lastInGroup + 1, 0, { index, folderId });
-        // LEGACY-MODULE-FOLDERS: use the same displayed-placement path as September's menu.
-        if (onItemMoveToFolder) { onItemMoveToFolder(placements); return; }
         onItemsChange(placements);
     }
 
@@ -737,10 +722,9 @@
             <ShDropdownMenuItem disabled={!canMoveFolder(folder, 1)} onSelect={() => moveFolder(folder, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
             {#if onFolderColor}<ShDropdownMenuItem onSelect={() => onFolderColor(folder)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>{/if}
             {#if onFolderFavorite && !folder.nodeOnlyFavoritesFolder}<ShDropdownMenuItem onSelect={() => onFolderFavorite(folder)}><StarIcon /><span>{folder.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>{/if}
-            <!-- LEGACY-MODULE-FOLDERS -->
-            {#if !flatFolderView && canHoldFolders(folder)}<ShDropdownMenuItem onSelect={() => createSubfolder(folder)}><FolderPlusIcon /><span>하위 폴더 만들기</span></ShDropdownMenuItem>{/if}
-            {#if !flatFolderView && nestTargets(folder).length > 0}<ShDropdownMenuItem onSelect={() => moveFolderInto(folder)}><FolderInputIcon /><span>다른 폴더 안으로</span></ShDropdownMenuItem>{/if}
-            {#if !flatFolderView && parentOf(folder) && !inLinkFolder(folder)}<ShDropdownMenuItem onSelect={() => moveFolderOut(folder)}><FolderOutputIcon /><span>폴더 밖으로 꺼내기</span></ShDropdownMenuItem>{/if}
+            {#if canHoldFolders(folder)}<ShDropdownMenuItem onSelect={() => createSubfolder(folder)}><FolderPlusIcon /><span>하위 폴더 만들기</span></ShDropdownMenuItem>{/if}
+            {#if nestTargets(folder).length > 0}<ShDropdownMenuItem onSelect={() => moveFolderInto(folder)}><FolderInputIcon /><span>다른 폴더 안으로</span></ShDropdownMenuItem>{/if}
+            {#if parentOf(folder) && !inLinkFolder(folder)}<ShDropdownMenuItem onSelect={() => moveFolderOut(folder)}><FolderOutputIcon /><span>폴더 밖으로 꺼내기</span></ShDropdownMenuItem>{/if}
             {@render folderMenuItems?.(folder, indexes)}
             {#if showFolderDelete}
                 <ShDropdownMenuSeparator />

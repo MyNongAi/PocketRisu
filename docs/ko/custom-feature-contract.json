@@ -636,11 +636,11 @@
         { "file": "src/ts/process/moduleSort.ts", "contains": "export function activationHistoryFromDisplay(" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "export function unpinModuleFavoritesOnce(" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "if (favoriteRootIndexes.has(index)) emitRoot(index)" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "favoriteItemIndexes={legacyModuleFolders ? undefined : favoriteModuleIndexes}" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "interleaveModuleCatalogGroups(grouped, promotedIndex, promotedFolderId, favorites, active)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "favoriteItemIndexes={favoriteModuleIndexes}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId, favorites, active)" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "else if (holdsModulesOnNow(folderById.get(folderByIndex.get(index)!))) emitFolder(folderByIndex.get(index)!)" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "if (favoritesFolder) emitFolder(favoritesFolder.folder!.id)" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "activeItemIndexes={legacyModuleFolders ? undefined : activeModuleIndexes}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "activeItemIndexes={activeModuleIndexes}" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "const favorite = favoriteAfterMove(!!module.favorite, module.folderId, folderId, favoritesId)" },
         { "file": "src/ts/process/moduleFavoritesFolder.ts", "contains": "export function gatherFavoriteModules<T extends FavoriteModule>(" },
         { "file": "src/ts/process/moduleFolders.ts", "contains": "!folder.nodeOnlyFavoritesFolder && before > folder.moduleIds.length" },
@@ -2812,7 +2812,7 @@
         "src/ts/process/linkedModuleFolder.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "maxFolderDepth={legacyModuleFolders ? 1 : 5}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "maxFolderDepth={5}" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "folderDepth(folder, folders) < maxFolderDepth" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "<div class=\"@container/folders flex flex-col gap-2\" bind:this={rootEl}" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "<FolderIcon size={16} class=\"shrink-0 text-textcolor2 @max-xs/folders:hidden\"/>" },
@@ -4321,26 +4321,6 @@
         { "file": "src/ts/characters.ts", "contains": "if (translateChoice !== '0' && translateChoice !== '1') return" }
       ],
       "regressionTests": []
-    },
-    {
-      "id": "LEGACY-MODULE-FOLDERS",
-      "title": "구버전 모듈 폴더 표시 전환",
-      "criticality": "core-ux",
-      "ownerFiles": [
-        "src/ts/process/legacyModuleFolderView.ts",
-        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
-        "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
-        "src/lib/UI/FolderedList.svelte"
-      ],
-      "requiredMarkers": [
-        { "file": "src/ts/process/legacyModuleFolderView.ts", "contains": "LEGACY-MODULE-FOLDERS" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "LEGACY-MODULE-FOLDERS" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "LEGACY-MODULE-FOLDERS" },
-        { "file": "src/lib/UI/FolderedList.svelte", "contains": "LEGACY-MODULE-FOLDERS" }
-      ],
-      "regressionTests": [
-        "src/ts/process/legacyModuleFolderView.test.ts"
-      ]
     },
     {
       "id": "BUSY-CONTROL-NOTICE",
