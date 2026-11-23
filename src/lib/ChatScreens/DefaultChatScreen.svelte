@@ -1,5 +1,6 @@
 <script lang="ts">
     import { getActiveHypaV3Preset } from "src/ts/process/memory/memoryPresets";
+    import { compactChat, compactCommand, compactGuardReason } from 'src/ts/process/memory/chatCompact';
 
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
@@ -675,7 +676,42 @@ import { isMobile } from 'src/ts/platform'
         return sendMain(true)
     }
 
+    // CHAT-COMPACT (2026-11-23): intercept before any send side effect or message insertion.
+    let compactRunning = false
+    async function runCompact(focusNote = '') {
+        const char = DBState.db.characters[view.characterIndex]
+        const chat = char?.chats?.[view.chatIndex]
+        const reason = compactGuardReason(!!char && !!chat && currentChatReady,
+            compactRunning || remoteBusy || !!chat && (preparingChatSends.has(chatGenKey(chat.id)) || $generationStates.has(chatGenKey(chat.id))),
+            !!char && !!chat && !!getActiveHypaV3Preset(DBState.db, char, chat))
+        if (reason) {
+            notifyInfo(reason === 'noChat' ? language.chatCompactNoChat : reason === 'busy' ? language.chatCompactBusy : language.chatCompactNoMemory)
+            return
+        }
+        if (!char || !chat) return
+        compactRunning = true
+        try {
+            const result = await compactChat(char, chat, DBState.db.nodeOnlyChatCompactMode ?? 'count',
+                DBState.db.nodeOnlyChatCompactKeep ?? 6, focusNote)
+            if (result === 'empty') notifyInfo(language.chatCompactEmpty)
+            else { void requestImmediateSave(); notifySuccess(language.chatCompactDone) }
+        } catch (error) {
+            void requestImmediateSave()
+            alertError(`[HypaV3] ${error}`)
+        } finally {
+            compactRunning = false
+        }
+    }
+
     async function sendMain(continueResponse:boolean) {
+        if (!continueResponse) {
+            const focusNote = compactCommand(messageInput)
+            if (focusNote !== null) {
+                messageInput = ''
+                await runCompact(focusNote)
+                return
+            }
+        }
         const selectedCharacter = DBState.db.characters[view.characterIndex]
         const selectedChatRoom = selectedCharacter?.chats?.[view.chatIndex]
         if(!selectedCharacter || !selectedChatRoom) return
@@ -1893,6 +1929,9 @@ import { isMobile } from 'src/ts/platform'
                                     <BrainIcon /><span>{language.hypaMemoryV3Modal}</span>
                                 </ShDropdownMenuItem>
                             {/if}
+                            <ShDropdownMenuItem onSelect={() => { void runCompact() }}>
+                                <BrainIcon /><span>{language.chatCompactMenu}</span>
+                            </ShDropdownMenuItem>
                             {#if DBState.db.translator !== ''}
                                 <ShDropdownMenuItem class={DBState.db.useAutoTranslateInput ? 'text-green-500' : ''} onSelect={() => { DBState.db.useAutoTranslateInput = !DBState.db.useAutoTranslateInput }}>
                                     <GlobeIcon /><span>{language.autoTranslateInput}</span>

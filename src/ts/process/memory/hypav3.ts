@@ -33,6 +33,7 @@ export { createHypaV3Preset, type HypaV3Preset, type HypaV3Settings } from "./hy
 import { type HypaV3Preset, type HypaV3Settings } from "./hypav3Preset";
 import { getActiveHypaV3Preset } from "./memoryPresets";
 import { sendAllowingPrefillRefusal } from "./trailingPrefill";
+import { withFocusNote } from "./compactFocus";
 
 interface HypaV3Data {
     summaries: Summary[];
@@ -1699,6 +1700,7 @@ export async function summarize(
     oaiMessages: OpenAIChat[],
     isResummarize: boolean = false,
     requestContext?: HypaV3RequestContext,
+    compactOptions?: { instructionOverride?: string; focusNote?: string },
 ): Promise<string> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset(requestContext?.currentChar, requestContext?.currentChat).settings;
@@ -1713,8 +1715,11 @@ export async function summarize(
             ? "[Summarize the ongoing role story, It must also remove redundancy and unnecessary text and content from the output.]"
             : settings.summarizationPrompt;
 
-    const formated: OpenAIChat[] = parseChatML(
-        summarizationPrompt.replaceAll("{{slot}}", strMessages)
+    // CHAT-COMPACT (2026-11-23): a compact may replace the prompt (the scene
+    // question) or add a run-only focus note.
+    const effectivePrompt = compactOptions?.instructionOverride ?? summarizationPrompt;
+    const formated: OpenAIChat[] = withFocusNote(parseChatML(
+        effectivePrompt.replaceAll("{{slot}}", strMessages)
     ) ?? [
             {
                 role: "user",
@@ -1722,9 +1727,9 @@ export async function summarize(
             },
             {
                 role: "system",
-                content: summarizationPrompt,
+                content: effectivePrompt,
             },
-        ];
+        ], compactOptions?.focusNote ?? "", (content): OpenAIChat => ({ role: "system", content }));
 
     // API
     if (settings.summarizationModel === "subModel") {

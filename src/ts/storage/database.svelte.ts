@@ -458,6 +458,9 @@ export function normalizeDatabase(data:Database){
     // from recovery (kind='aux', pinned cache fetch), degraded recovery falls
     // back to pre-feature behavior, and the toggle remains the kill switch.
     data.nodeOnlyServerSideRequests ??= true
+    // CHAT-COMPACT (2026-11-23): PocketRisu-only manual compaction preferences.
+    if (data.nodeOnlyChatCompactMode !== 'model') data.nodeOnlyChatCompactMode = 'count'
+    if (!Number.isInteger(data.nodeOnlyChatCompactKeep) || (data.nodeOnlyChatCompactKeep ?? -1) < 0) data.nodeOnlyChatCompactKeep = 6
     // GEMINI-PDF-INPUT: experimental, opt-in (default OFF).
     data.nodeOnlyGeminiPdfInput ??= false
     data.nodeOnlyGeminiPdfMediaResolution ??= 'default'
@@ -1575,6 +1578,9 @@ export interface Database{
     hypaV3Settings: HypaV3Settings // legacy
     hypaV3Presets: HypaV3Preset[]
     hypaV3PresetId: number
+    /** CHAT-COMPACT (2026-11-23): raw tail selection for manual HypaV3 compaction. */
+    nodeOnlyChatCompactMode?: 'count' | 'model'
+    nodeOnlyChatCompactKeep?: number
     /** Long-term memory presets (truth). `hypaV3*` above are a mirror for upstream compatibility — see memoryPresets.ts. */
     memoryPresets: MemoryPreset[]
     /** Global default preset id, or 'off'. Chats without a binding inherit this. */

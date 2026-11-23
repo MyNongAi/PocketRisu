@@ -2,8 +2,35 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-22",
+  "updatedAt": "2026-11-23",
   "features": [
+    {
+      "id": "CHAT-COMPACT",
+      "title": "Manual chat compaction through HypaV3",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/memory/chatCompact.ts",
+        "src/ts/process/memory/compactFocus.ts",
+        "src/ts/process/memory/hypav3.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/Setting/Pages/MemorySettings.svelte",
+        "src/ts/storage/database.svelte.ts",
+        "src/lang/ko.ts",
+        "src/lang/en.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/memory/chatCompact.ts", "contains": "CHAT-COMPACT (2026-11-23)" },
+        { "file": "src/ts/process/memory/hypav3.ts", "contains": "CHAT-COMPACT (2026-11-23)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "CHAT-COMPACT (2026-11-23)" },
+        { "file": "src/lib/Setting/Pages/MemorySettings.svelte", "contains": "CHAT-COMPACT (2026-11-23)" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "CHAT-COMPACT (2026-11-23)" },
+        { "file": "src/lang/ko.ts", "contains": "CHAT-COMPACT (2026-11-23)" },
+        { "file": "src/lang/en.ts", "contains": "CHAT-COMPACT (2026-11-23)" },
+        { "file": "src/ts/process/memory/compactFocus.ts", "contains": "export function withFocusNote" },
+        { "file": "src/ts/process/memory/chatCompact.ts", "contains": "const covered = new Set(summaries.flatMap" }
+      ],
+      "regressionTests": ["src/ts/process/memory/chatCompact.test.ts"]
+    },
     {
       "id": "CHAT-LIST-RECENT",
       "title": "채팅 목록 최신순 (폴더와 채팅 혼합)",

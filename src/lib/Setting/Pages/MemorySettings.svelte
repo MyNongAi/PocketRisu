@@ -265,6 +265,21 @@
     </SelectInput>
         {/snippet}
     </SettingRowLayout>
+    <!-- CHAT-COMPACT (2026-11-23): global manual cut preferences. -->
+    <SettingRowLayout item={field('compactMode', language.chatCompactMode, 'chatCompactMode')}>
+        {#snippet control()}
+        <SelectInput className="w-48" size="sm" value={DBState.db.nodeOnlyChatCompactMode ?? 'count'} onchange={(event) => { DBState.db.nodeOnlyChatCompactMode = event.currentTarget.value === 'model' ? 'model' : 'count'; save() }}>
+            <OptionInput value="count">{language.chatCompactCountMode}</OptionInput>
+            <OptionInput value="model">{language.chatCompactModelMode}</OptionInput>
+        </SelectInput>
+        {/snippet}
+    </SettingRowLayout>
+    <p class="px-3 pb-2 text-xs text-textcolor2">{language.chatCompactModelHelp}</p>
+    <SettingRowLayout item={field('compactKeep', language.chatCompactKeep, 'chatCompactKeep')}>
+        {#snippet control()}
+        <NumberInput className="w-24" size="sm" padding min={0} value={DBState.db.nodeOnlyChatCompactKeep ?? 6} onChange={(event) => { DBState.db.nodeOnlyChatCompactKeep = Math.max(0, Math.floor(event.currentTarget.valueAsNumber || 0)); save() }} />
+        {/snippet}
+    </SettingRowLayout>
     </div>
     <FolderedList
         {folders}
