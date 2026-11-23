@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { unzipSync, zipSync, strToU8 } from 'fflate'
 import stagingPkg from './import-staging.cjs'
 
 const {
     StagingStopped,
     stageImportFile,
+    stageImportFilePath,
+    refuseWholeFile,
     stagedFormatOf,
     RPACK_MAP,
     RPACK_ENCODE,
@@ -20,6 +23,51 @@ const {
 const NONCE = '0123456789abcdef0123456789abcdef'
 const sha = (data: Uint8Array) => crypto.createHash('sha256').update(data).digest('hex')
 const stubOf = (ref: string) => `PRSTAGE1:${NONCE}:${ref}\n`
+
+async function fromSyntheticPath(name: string, data: Buffer, ctx: any) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'proton-stream-test-'))
+    const file = path.join(dir, name)
+    try {
+        fs.writeFileSync(file, data)
+        return await stageImportFilePath(name, file, ctx)
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+    }
+}
+
+describe('PROTON-STREAM file staging', () => {
+    it('produces the same module stubs as the Buffer path', async () => {
+        const data = risum({ name: 'synthetic', assets: [['a', '', 'png']] }, [Buffer.from('asset')])
+        const expected = await stageImportFile('test.risum', data, fakeStore().ctx)
+        const actual = await fromSyntheticPath('test.risum', data, fakeStore().ctx)
+        expect(actual).toEqual(expected)
+    })
+
+    it('produces the same CHARX stubs as the Buffer path', async () => {
+        const data = Buffer.from(zipSync({
+            'card.json': strToU8('{"spec":"chara_card_v3","data":{"name":"Synthetic"}}'),
+            'assets/icon.png': new Uint8Array([1, 2, 3]),
+        }))
+        const expected = await stageImportFile('test.charx', data, fakeStore().ctx)
+        const actual = await fromSyntheticPath('test.charx', data, fakeStore().ctx)
+        expect(actual).toEqual(expected)
+    })
+
+    it('refuses a huge whole-file fallback and skips oversized PNG reads', async () => {
+        expect(refuseWholeFile(1024 * 1024 * 1024 + 1, null)).toBe(true)
+        expect(refuseWholeFile(1024 * 1024 * 1024, null)).toBe(false)
+        expect(refuseWholeFile(1024 * 1024 * 1024 + 1, { data: Buffer.alloc(1) })).toBe(false)
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'proton-stream-test-'))
+        try {
+            const file = path.join(dir, 'large.png')
+            fs.writeFileSync(file, Buffer.from([0x89, 0x50]))
+            fs.truncateSync(file, 512 * 1024 * 1024 + 1)
+            expect(await stageImportFilePath('large.png', file, fakeStore().ctx)).toBeNull()
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true })
+        }
+    })
+})
 
 /** An asset store that answers like the external one, recording what it got. */
 function fakeStore(options: { fail?: string } = {}) {

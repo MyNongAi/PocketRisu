@@ -28,6 +28,8 @@ import { CryptoProxy } from "@protontech/crypto";
 import { Api as CryptoApi } from "@protontech/crypto/proxy/endpoint/api.ts";
 import { computeKeyPassword, getSrp } from "@protontech/crypto/srp";
 import { createHash } from "node:crypto";
+import { open } from "node:fs/promises";
+import { discardPartialFile, retryBlock, writeOrderedBlocks } from "./protonBlockQueue";
 
 CryptoProxy.setEndpoint(new CryptoApi());
 
@@ -89,7 +91,7 @@ export function parseShareUrl(url: string): { token: string; password: string } 
     return { token: m[1], password: m[2] };
 }
 
-async function api(path: string, opts: { headers?: Record<string, string>; json?: unknown } = {}) {
+async function api(path: string, opts: { headers?: Record<string, string>; json?: unknown; signal?: AbortSignal } = {}) {
     const headers: Record<string, string> = {
         "x-pm-appversion": APP_VERSION,
         accept: "application/vnd.protonmail.v1+json",
@@ -101,9 +103,10 @@ async function api(path: string, opts: { headers?: Record<string, string>; json?
         method: opts.json !== undefined ? "POST" : "GET",
         headers,
         body: opts.json !== undefined ? JSON.stringify(opts.json) : undefined,
+        signal: opts.signal,
     });
     const body: any = await res.json().catch(() => ({}));
-    if (body?.Code !== 1000) {
+    if (!res.ok || body?.Code !== 1000) {
         throw new ProtonShareError(body?.Error || `Proton API ${res.status}`, body?.Code, res.status);
     }
     return body;
@@ -279,12 +282,13 @@ export function rootLinkMeta(item: any): any | null {
 }
 
 /** Link details for a set of ids, keyed by id (the API does not promise order). */
-async function fetchLinks(session: Pick<ShareSession, "volumeId" | "authHeaders">, linkIds: string[]): Promise<Map<string, any>> {
+async function fetchLinks(session: Pick<ShareSession, "volumeId" | "authHeaders">, linkIds: string[], signal?: AbortSignal): Promise<Map<string, any>> {
     const out = new Map<string, any>();
     for (let i = 0; i < linkIds.length; i += LINKS_PER_REQUEST) {
         const batch = await api(`drive/unauth/v2/volumes/${encodeURIComponent(session.volumeId)}/links`, {
             headers: session.authHeaders,
             json: { LinkIDs: linkIds.slice(i, i + LINKS_PER_REQUEST) },
+            signal,
         });
         for (const item of batch.Links ?? []) {
             const link = item.Link ?? item;
@@ -300,7 +304,7 @@ async function fetchLinks(session: Pick<ShareSession, "volumeId" | "authHeaders"
  * so every level has to be unwrapped in order; a path that does not follow
  * the real tree fails to decrypt rather than reaching anything outside it.
  */
-async function resolveFolder(session: ShareSession, path: readonly string[]): Promise<ResolvedFolder> {
+async function resolveFolder(session: ShareSession, path: readonly string[], signal?: AbortSignal): Promise<ResolvedFolder> {
     if (session.rootMeta.LinkType !== 1) {
         throw new ProtonShareError("This link points at a file, not a folder");
     }
@@ -319,9 +323,9 @@ async function resolveFolder(session: ShareSession, path: readonly string[]): Pr
                     trail: [],
                 };
             }
-            const parent = await resolveFolder(session, path.slice(0, -1));
+            const parent = await resolveFolder(session, path.slice(0, -1), signal);
             const linkId = path[path.length - 1];
-            const item = (await fetchLinks(session, [linkId])).get(linkId);
+            const item = (await fetchLinks(session, [linkId], signal)).get(linkId);
             const link = item?.Link ?? item;
             if (!link || link.Type !== 1) {
                 throw new ProtonShareError("That item is not a folder in this share");
@@ -484,6 +488,126 @@ export async function fetchProtonThumbnails(
  * folder share, with `path` naming the folders it sits in; omit both for a
  * link that points straight at a file.
  */
+// PROTON-STREAM (2026-11-23): bounded, ordered block download for imports.
+export async function downloadProtonShareToFile(
+    url: string,
+    opts: { linkId?: string; path?: readonly string[]; customPassword?: string },
+    destPath: string,
+    control: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+): Promise<{ name: string; size: number; mediaType: string | null }> {
+    const signal = control.signal;
+    const checkAbort = () => { if (signal?.aborted) throw signal.reason ?? new Error("Download aborted"); };
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+        checkAbort();
+        handle = await open(destPath, "wx");
+        // Only metadata is inside withSession. A dropped block can never rerun
+        // the file operation, and a refreshed token starts at the pending page.
+        const prepared = await withSession(url, opts.customPassword ?? "", async (session) => {
+            checkAbort();
+            const nodeId = opts.linkId || session.rootMeta.LinkID;
+            const entry = (await fetchLinks(session, [nodeId], signal)).get(nodeId);
+            if (!entry?.File?.ActiveRevision) throw new ProtonShareError("That link is a folder, not a file");
+            let parentKey: unknown = session.shareKey;
+            if (nodeId !== session.rootMeta.LinkID) {
+                const folder = await resolveFolder(session, opts.path ?? [], signal);
+                const link = entry.Link ?? entry;
+                if (link.ParentLinkID && link.ParentLinkID !== folder.linkId) {
+                    throw new ProtonShareError("That file is not inside this folder");
+                }
+                parentKey = folder.key;
+            }
+            const link = entry.Link ?? session.rootMeta;
+            const name = await decryptName(link.Name ?? session.rootMeta.Name, parentKey);
+            const nodeKey = await unwrapNodeKey(link, parentKey);
+            const sessionKey = await CryptoProxy.decryptSessionKey({
+                binaryMessage: (Uint8Array as any).fromBase64(entry.File.ContentKeyPacket),
+                decryptionKeys: nodeKey,
+            });
+            return { name, nodeId, entry, nodeKey, sessionKey, revisionId: entry.File.ActiveRevision.RevisionID };
+        });
+        const { name, nodeId, entry, nodeKey, sessionKey, revisionId } = prepared;
+        const getPage = async (index: number) => withSession(url, opts.customPassword ?? "", async (session) => {
+            checkAbort();
+            const path = `drive/unauth/v2/volumes/${encodeURIComponent(session.volumeId)}`
+                + `/files/${encodeURIComponent(nodeId)}/revisions/${encodeURIComponent(revisionId)}`
+                + `?PageSize=${BLOCK_PAGE_SIZE}&FromBlockIndex=${index}`;
+            return (await api(path, { headers: session.authHeaders, signal })).Revision;
+        });
+        const encryptedHashes: Uint8Array[] = [];
+        let size = 0;
+        for (let fromIndex = 1; ; ) {
+            checkAbort();
+            const page = await getPage(fromIndex);
+            const blocks: any[] = [...(page.Blocks ?? [])].sort((a, b) => a.Index - b.Index);
+            if (!blocks.length) break;
+            // Promise.all preserves block order. Four decrypted blocks is the
+            // maximum resident work set, regardless of the revision size.
+            await writeOrderedBlocks(blocks, (initial) => retryBlock(
+                initial,
+                async (block) => {
+                    const res = await fetch(block.BareURL, {
+                        headers: { "pm-storage-token": block.Token, "x-pm-appversion": APP_VERSION }, signal,
+                    });
+                    if (!res.ok) throw new ProtonShareError(`Block ${block.Index} failed (${res.status})`, undefined, res.status);
+                    const encrypted = new Uint8Array(await res.arrayBuffer());
+                    const hash = new Uint8Array(createHash("sha256").update(encrypted).digest());
+                    let signature: Uint8Array | undefined;
+                    if (block.EncSignature) {
+                        const sig: any = await CryptoProxy.decryptMessage({
+                            armoredMessage: block.EncSignature, decryptionKeys: nodeKey, format: "binary",
+                        });
+                        signature = sig.data;
+                    }
+                    const plain: any = await CryptoProxy.decryptMessage({
+                        binaryMessage: encrypted, binarySignature: signature, sessionKeys: sessionKey,
+                        verificationKeys: [], format: "binary",
+                    });
+                    return { hash, data: plain.data as Uint8Array };
+                },
+                async (block) => {
+                    const refreshed = await getPage(block.Index);
+                    return (refreshed.Blocks ?? []).find((candidate: any) => candidate.Index === block.Index) ?? block;
+                },
+                (error) => error instanceof ProtonShareError ? error.status : undefined,
+                signal,
+            ), async (result) => {
+                checkAbort();
+                encryptedHashes.push(result.hash);
+                let offset = 0;
+                while (offset < result.data.length) {
+                    const written = await handle!.write(result.data, offset, result.data.length - offset);
+                    if (!written.bytesWritten) throw new Error("Unable to write Proton block");
+                    offset += written.bytesWritten;
+                }
+                size += result.data.length;
+                control.onProgress?.(size);
+            }, signal);
+            if (blocks.length < BLOCK_PAGE_SIZE) break;
+            fromIndex = blocks[blocks.length - 1].Index + 1;
+        }
+        const manifestSignature = entry.File.ActiveRevision.ManifestSignature;
+        if (manifestSignature) {
+            try {
+                const verified: any = await CryptoProxy.verifyMessage({
+                    binaryData: concat(encryptedHashes), armoredSignature: manifestSignature,
+                    verificationKeys: [nodeKey],
+                });
+                if (verified.verificationStatus !== 2) throw new ProtonShareError("The file's integrity signature did not verify");
+            } catch (error) {
+                if (error instanceof ProtonShareError) throw error;
+                console.warn("[protonShare] manifest verification skipped:", (error as Error).message);
+            }
+        }
+        await handle.close();
+        handle = undefined;
+        return { name, size, mediaType: entry.File.MediaType ?? null };
+    } catch (error) {
+        if (handle) await discardPartialFile(handle, destPath);
+        throw error;
+    }
+}
+
 export async function downloadProtonShare(
     url: string,
     opts: { linkId?: string; path?: readonly string[]; customPassword?: string } = {},

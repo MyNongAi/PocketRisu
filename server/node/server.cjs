@@ -90,7 +90,7 @@ const { createImportAssetJournal, isImportId } = require('./import-asset-journal
 // Which asset objects each cancellable client import created, so a cancel
 // deletes exactly those and nothing another writer relies on.
 const importAssetJournal = createImportAssetJournal();
-const { StagingStopped, newStagingNonce, stageImportFile } = require('./import-staging.cjs');
+const { StagingStopped, newStagingNonce, stageImportFilePath, refuseWholeFile } = require('./import-staging.cjs');
 const { diagnoseAssetReferences } = require('./asset-doctor.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
@@ -8476,37 +8476,67 @@ app.post('/api/import/proton/inspect', async (req, res, next) => {
     }
 });
 
+// PROTON-STREAM (2026-11-23): only random .part files created by this feature
+// are cleaned at startup. The active server owns this directory exclusively.
+const protonImportTmpDir = path.join(savePath, 'import-tmp');
+mkdirSync(protonImportTmpDir, { recursive: true });
+for (const name of readdirSync(protonImportTmpDir)) {
+    if (/^[a-f0-9-]{36}\.part$/.test(name)) {
+        try { unlinkSync(path.join(protonImportTmpDir, name)); } catch (error) {
+            logger.warn('[Proton] temporary file cleanup failed:', error?.message ?? error);
+        }
+    }
+}
+const protonWholeFileError = '이 파일은 서버에서 나눠 처리할 수 없고 1GB를 넘어 브라우저로 보낼 수 없습니다.';
+function protonImportTempPath() {
+    return path.join(protonImportTmpDir, `${require('crypto').randomUUID()}.part`);
+}
+function protonAbortOnDisconnect(req, res) {
+    const controller = new AbortController();
+    const stop = () => { if (!res.writableFinished) controller.abort(new StagingStopped()); };
+    res.on('close', stop);
+    req.on('aborted', stop);
+    return { signal: controller.signal, stopped: () => controller.signal.aborted,
+        dispose: () => { res.off('close', stop); req.off('aborted', stop); } };
+}
+async function sendProtonFile(res, filePath, size) {
+    const { pipeline } = require('stream/promises');
+    res.locals.skipCompression = true;
+    res.setHeader('content-type', 'application/octet-stream');
+    res.setHeader('content-encoding', 'identity');
+    res.setHeader('content-length', String(size));
+    await pipeline(require('fs').createReadStream(filePath), res);
+}
+
 app.post('/api/import/proton/download', async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
+    const filePath = protonImportTempPath();
+    const client = protonAbortOnDisconnect(req, res);
     try {
-        const { downloadProtonShare } = await loadProtonShare();
+        const { downloadProtonShareToFile } = await loadProtonShare();
         const folderPath = readProtonPath(req.body?.path);
         if (!folderPath) return res.status(400).json({ error: 'Invalid folder path' });
-        const file = await downloadProtonShare(String(req.body?.url ?? ''), {
+        const file = await downloadProtonShareToFile(String(req.body?.url ?? ''), {
             linkId: req.body?.linkId ? String(req.body.linkId) : undefined,
             path: folderPath,
             customPassword: String(req.body?.password ?? ''),
-        });
+        }, filePath, { signal: client.signal });
         // The name comes from the share, so never let it steer a path or a
         // header; strip separators and send it percent-encoded.
         const safeName = path.basename(String(file.name)).replace(/[\r\n"\\]/g, '_');
-        // A view, not a copy: the file is already whole in memory, and a
-        // client may download a few at once.
-        const body = Buffer.from(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength);
-        res.setHeader('content-type', 'application/octet-stream');
+        if (refuseWholeFile(file.size, null)) return res.status(413).json({ error: protonWholeFileError });
         res.setHeader('x-proton-filename', encodeURIComponent(safeName));
-        // Bot archives are already compressed, so re-compressing only costs CPU
-        // and drops content-length — which the client needs for its progress
-        // bar on a transfer that runs to tens of megabytes.
-        res.setHeader('content-encoding', 'identity');
-        res.setHeader('content-length', String(body.length));
-        res.end(body);
+        await sendProtonFile(res, filePath, file.size);
     } catch (error) {
+        if (client.stopped()) return;
         if (error?.name === 'ProtonShareError') {
             logger.warn('[Proton] download failed:', error.message);
             return res.status(protonErrorStatus(error)).json({ error: error.message });
         }
         next(error);
+    } finally {
+        client.dispose();
+        await fs.unlink(filePath).catch(() => {});
     }
 });
 
@@ -8559,29 +8589,28 @@ app.post('/api/import/proton/stage', async (req, res, next) => {
     if (!folderPath) return res.status(400).json({ error: 'Invalid folder path' });
     const importId = readImportIdHeader(req, res);
     if (importId === false) return;
+    const filePath = protonImportTempPath();
+    const client = protonAbortOnDisconnect(req, res);
     try {
-        const { downloadProtonShare } = await loadProtonShare();
-        const file = await downloadProtonShare(String(req.body?.url ?? ''), {
+        const { downloadProtonShareToFile } = await loadProtonShare();
+        const file = await downloadProtonShareToFile(String(req.body?.url ?? ''), {
             linkId: req.body?.linkId ? String(req.body.linkId) : undefined,
             path: folderPath,
             customPassword: String(req.body?.password ?? ''),
-        });
+        }, filePath, { signal: client.signal });
         const safeName = path.basename(String(file.name)).replace(/[\r\n"\\]/g, '_');
-        const body = Buffer.from(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength);
         res.setHeader('x-proton-filename', encodeURIComponent(safeName));
-        res.setHeader('x-proton-original-size', String(body.length));
+        res.setHeader('x-proton-original-size', String(file.size));
 
         // The browser gave up (closed the page or its connection): stop storing.
-        let gone = false;
-        res.on('close', () => { if (!res.writableFinished) gone = true; });
         let staged = null;
         if (!exclusiveStorageReason && !externalAssetMigrationInProgress) {
             const nonce = newStagingNonce();
             try {
-                staged = await stageImportFile(safeName, body, {
+                staged = await stageImportFilePath(safeName, filePath, {
                     nonce,
                     writeAsset: (key, data) => writeStagedAsset(key, data, importId),
-                    stopped: () => gone,
+                    stopped: client.stopped,
                 });
                 if (staged) staged.nonce = nonce;
             } catch (error) {
@@ -8592,7 +8621,7 @@ app.post('/api/import/proton/stage', async (req, res, next) => {
                 staged = null;
             }
         }
-        if (gone) return;
+        if (client.stopped()) return;
         res.setHeader('content-type', 'application/octet-stream');
         if (staged) {
             logger.info(`[ImportStaging] ${safeName}:${staged.assets} assets (${staged.assetBytes} bytes) stored, ${staged.data.length} bytes sent`);
@@ -8601,17 +8630,18 @@ app.post('/api/import/proton/stage', async (req, res, next) => {
             res.setHeader('x-proton-staged-assets', String(staged.assets));
             return res.end(staged.data);
         }
-        // An archive: as from /download (no gzip, a content-length to read).
-        res.locals.skipCompression = true;
-        res.setHeader('content-encoding', 'identity');
-        res.setHeader('content-length', String(body.length));
-        res.end(body);
+        if (refuseWholeFile(file.size, staged)) return res.status(413).json({ error: protonWholeFileError });
+        await sendProtonFile(res, filePath, file.size);
     } catch (error) {
+        if (client.stopped()) return;
         if (error?.name === 'ProtonShareError') {
             logger.warn('[Proton] download failed:', error.message);
             return res.status(protonErrorStatus(error)).json({ error: error.message });
         }
         next(error);
+    } finally {
+        client.dispose();
+        await fs.unlink(filePath).catch(() => {});
     }
 });
 

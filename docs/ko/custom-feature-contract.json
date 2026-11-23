@@ -1858,6 +1858,8 @@
       "criticality": "cost",
       "ownerFiles": [
         "server/node/import-staging.cjs",
+        "server/node/proton/protonShare.ts",
+        "server/node/proton/protonBlockQueue.ts",
         "server/node/server.cjs",
         "src/ts/stagedAssets.ts",
         "src/ts/globalApi.svelte.ts",
@@ -1869,6 +1871,10 @@
         "src/ts/characterCards.ts"
       ],
       "requiredMarkers": [
+        { "file": "server/node/proton/protonShare.ts", "contains": "PROTON-STREAM (2026-11-23): bounded, ordered block download" },
+        { "file": "server/node/proton/protonBlockQueue.ts", "contains": "PROTON-STREAM (2026-11-23): bounded block scheduling" },
+        { "file": "server/node/import-staging.cjs", "contains": "PROTON-STREAM (2026-11-23): stage directly" },
+        { "file": "server/node/server.cjs", "contains": "PROTON-STREAM (2026-11-23): only random .part files" },
         { "file": "server/node/server.cjs", "contains": "app.post('/api/import/proton/stage', async (req, res, next) => {" },
         { "file": "server/node/server.cjs", "contains": "writeAsset: (key, data) => writeStagedAsset(key, data, importId)," },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "const staged = customId === '' ? stagedAssetRef(data) : undefined" },
@@ -1880,6 +1886,7 @@
       ],
       "regressionTests": [
         "server/node/import-staging.test.ts",
+        "server/node/proton/protonBlockQueue.test.ts",
         "src/ts/stagedAssets.test.ts",
         "src/ts/process/stagedImport.test.ts",
         "src/ts/protonImport.test.ts",

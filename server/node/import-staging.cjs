@@ -23,6 +23,8 @@
 // sends it whole, as before.
 
 const crypto = require('crypto');
+const fs = require('fs');
+const fsp = require('fs/promises');
 const fflate = require('fflate');
 
 const STUB_PREFIX = 'PRSTAGE1:';
@@ -176,23 +178,83 @@ async function stageRisum(buf, ctx, writer) {
     return Buffer.concat(parts);
 }
 
+// PROTON-STREAM (2026-11-23): positional reads keep only one module asset
+// (and the bounded asset write queue) resident at a time.
+async function stageRisumPath(filePath, ctx, writer) {
+    const file = await fsp.open(filePath, 'r');
+    try {
+        const size = (await file.stat()).size;
+        let pos = 0;
+        async function exact(length) {
+            if (ctx.stopped?.()) throw new StagingStopped();
+            if (length > size - pos) throw new RangeError('Truncated module');
+            const data = Buffer.allocUnsafe(length);
+            let done = 0;
+            while (done < length) {
+                if (ctx.stopped?.()) throw new StagingStopped();
+                const { bytesRead } = await file.read(data, done, length - done, pos + done);
+                if (!bytesRead) throw new RangeError('Truncated module');
+                done += bytesRead;
+            }
+            pos += length;
+            return data;
+        }
+        if (!(await exact(2)).equals(Buffer.from([111, 0]))) return null;
+        const main = await exact((await exact(4)).readUInt32LE(0));
+        let parsed;
+        try { parsed = JSON.parse(rpack(main, RPACK_DECODE).toString('utf-8')); }
+        catch { return null; }
+        if (parsed?.type !== 'risuModule') return null;
+        const stubs = [];
+        for (;;) {
+            const mark = (await exact(1))[0];
+            if (mark === 0) break;
+            if (mark !== 1) return null;
+            const len = (await exact(4)).readUInt32LE(0);
+            await writer.room();
+            const data = await exact(len);
+            stubs.push(writer.write(rpack(data, RPACK_DECODE)));
+        }
+        if (stubs.length > (Array.isArray(parsed.module?.assets) ? parsed.module.assets.length : 0)) return null;
+        await writer.settle();
+        const parts = [Buffer.from([111, 0]), lengthBytes(main.length), main];
+        for (const stub of await Promise.all(stubs)) {
+            const encoded = rpack(stub, RPACK_ENCODE);
+            parts.push(Buffer.from([1]), lengthBytes(encoded.length), encoded);
+        }
+        parts.push(Buffer.from([0]));
+        return Buffer.concat(parts);
+    } catch (error) {
+        if (error instanceof RangeError) return null;
+        throw error;
+    } finally {
+        await file.close();
+    }
+}
+
 // ─── CHARX ──────────────────────────────────────────────────────────────────
 
 /**
  * Streams the archive through fflate.Unzip as CharXImporter does: an entry is
  * read when `wanted(file)` says so, and `onEntry(name, data)` gets it whole.
  */
-async function walkZip(buf, wanted, onEntry, writer) {
+async function walkZip(buf, wanted, onEntry, writer, stopped) {
     const unzip = new fflate.Unzip();
     unzip.register(fflate.UnzipInflate);
     let failure = null;
     unzip.onfile = (file) => {
         if (!wanted(file)) return;
         const parts = [];
+        let total = 0;
+        let oversized = false;
         file.ondata = (err, dat, final) => {
             if (err) { failure ??= err; return; }
-            if (dat && dat.length) parts.push(Buffer.from(dat.buffer, dat.byteOffset, dat.length));
-            if (final) {
+            if (dat && dat.length && !oversized) {
+                total += dat.length;
+                if (total > MAX_ASSET_SIZE_BYTES) { oversized = true; parts.length = 0; }
+                else parts.push(Buffer.from(dat.buffer, dat.byteOffset, dat.length));
+            }
+            if (final && !oversized) {
                 try {
                     onEntry(file.name, Buffer.concat(parts));
                 } catch (error) {
@@ -202,12 +264,26 @@ async function walkZip(buf, wanted, onEntry, writer) {
         };
         file.start();
     };
-    if (buf.length === 0) unzip.push(new Uint8Array(0), true);
-    for (let offset = 0; offset < buf.length; offset += UNZIP_PUSH_SLICE_BYTES) {
-        const end = Math.min(offset + UNZIP_PUSH_SLICE_BYTES, buf.length);
-        unzip.push(buf.subarray(offset, end), end === buf.length);
-        if (failure) throw failure;
-        if (writer) await writer.room();
+    if (typeof buf === 'string') {
+        // fflate needs the final flag on the last slice. Keep one slice ahead.
+        let previous = null;
+        for await (const slice of fs.createReadStream(buf, { highWaterMark: UNZIP_PUSH_SLICE_BYTES })) {
+            if (stopped?.()) throw new StagingStopped();
+            if (previous) unzip.push(previous, false);
+            previous = slice;
+            if (failure) throw failure;
+            if (writer) await writer.room();
+        }
+        unzip.push(previous ?? new Uint8Array(0), true);
+    } else {
+        if (buf.length === 0) unzip.push(new Uint8Array(0), true);
+        for (let offset = 0; offset < buf.length; offset += UNZIP_PUSH_SLICE_BYTES) {
+            if (stopped?.()) throw new StagingStopped();
+            const end = Math.min(offset + UNZIP_PUSH_SLICE_BYTES, buf.length);
+            unzip.push(buf.subarray(offset, end), end === buf.length);
+            if (failure) throw failure;
+            if (writer) await writer.room();
+        }
     }
     if (failure) throw failure;
 }
@@ -222,7 +298,7 @@ async function stageCharx(buf, ctx, writer) {
     // First look for the card alone: an archive without one is refused by the
     // importer, so none of its assets are stored for nothing.
     let hasCard = false;
-    await walkZip(buf, (file) => file.name === 'card.json', () => { hasCard = true; }, null);
+    await walkZip(buf, (file) => file.name === 'card.json', () => { hasCard = true; }, null, ctx.stopped);
 
     const out = {};
     const stubs = [];
@@ -240,7 +316,7 @@ async function stageCharx(buf, ctx, writer) {
             out[name] = null;
             stubs.push(writer.write(data, (stub) => { out[name] = [stub, { level: 0 }]; }));
         }
-    }, writer);
+    }, writer, ctx.stopped);
     if (moduleData) {
         // The bot keeps the module's scripts and lorebook; its assets are
         // saved and stubbed like any other (a module that does not parse
@@ -367,6 +443,11 @@ function stagedFormatOf(name) {
     return null;
 }
 
+// PROTON-STREAM (2026-11-23): a browser cannot hold an unstaged huge file.
+function refuseWholeFile(size, staged) {
+    return !staged && size > 1024 * 1024 * 1024;
+}
+
 /**
  * Stages `buf` (the whole file named `name`). Returns the file to send in
  * its place and what was stored, or null when this file is sent whole.
@@ -392,11 +473,34 @@ async function stageImportFile(name, buf, ctx) {
     return { format, data, assets: writer.count, assetBytes: writer.bytes };
 }
 
+// PROTON-STREAM (2026-11-23): stage directly from the downloaded file.
+async function stageImportFilePath(name, filePath, ctx) {
+    const format = stagedFormatOf(name);
+    if (!format) return null;
+    const writer = createAssetWriter(ctx);
+    let data;
+    try {
+        if (format === 'charx') data = await stageCharx(filePath, ctx, writer);
+        else if (format === 'risum') data = await stageRisumPath(filePath, ctx, writer);
+        else {
+            const { size } = await fsp.stat(filePath);
+            if (size > 512 * 1024 * 1024) return null;
+            data = await stagePng(await fsp.readFile(filePath), ctx, writer);
+        }
+    } finally {
+        await writer.settle().catch(() => {});
+    }
+    if (!data) return null;
+    return { format, data, assets: writer.count, assetBytes: writer.bytes };
+}
+
 module.exports = {
     StagingStopped,
     newStagingNonce,
     stageImportFile,
+    stageImportFilePath,
     stagedFormatOf,
+    refuseWholeFile,
     // For tests.
     STUB_PREFIX,
     RPACK_MAP,
