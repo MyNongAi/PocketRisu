@@ -706,7 +706,9 @@
       : color === 'indigo' ? 'bg-indigo-700/20'
       : color === 'purple' ? 'bg-purple-700/20'
       : color === 'pink' ? 'bg-pink-700/20'
-      : 'bg-darkbg/20'
+      // RAIL-FOLDER-TINT (2026-11-23): darkbg/20 over the rail's bgcolor was one or
+      // two shades off, invisible; a veil of the text colour shows in any theme.
+      : 'bg-textcolor/5'
   }
 
   function openSidebarFolderSettings(folderId: string, e: MouseEvent) {
@@ -1405,7 +1407,10 @@
       </div>
       {#if openFolders.includes(child.id)}
         {#if split}
-          <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1">
+          <!-- RAIL-FOLDER-TINT (2026-11-23): the two-column list's open folders get the folder-colour
+               tint the one-column rail draws, not a bare border (the user: "그냥 폴더도 뒤에 배경색이
+               깔리는게 구분을 보기 쉽더라", about the left bot list). -->
+          <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1 {railFolderTint(child.color)}">
             {@render railNestedDropSpacer(child.id, 0, 'w-full')}
             {#each child.folder as member, memberIndex (member.type === 'normal' ? member.id : member.chaId)}
               {@render railNestedFolders(child.id, true, memberIndex)}
@@ -1501,7 +1506,7 @@
           </SidebarAvatar>
         </div>
         {#if railFolderOpen(item.char)}
-          <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1">
+          <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1 {railFolderTint(item.char.color)}">
             <div
               class="h-4 min-h-4 w-full"
               role="listitem"
@@ -2154,7 +2159,7 @@
             char.color === 'indigo' ? 'bg-indigo-700/20' :
             char.color === 'purple' ? 'bg-purple-700/20' :
             char.color === 'pink' ? 'bg-pink-700/20' :
-            'bg-darkbg/20'
+            'bg-textcolor/5'
           }"></div>
           <div class="h-4 min-h-4 w-14 relative z-10" role="listitem" data-spacer-index={char.system === undefined ? "0" : undefined} data-spacer-folder={char.system === undefined ? char.id : undefined} ondragover={(e) => {
             if(char.type === 'folder' && char.system !== undefined){ return }

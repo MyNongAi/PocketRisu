@@ -2408,6 +2408,19 @@
       "regressionTests": ["src/ts/gui/titleColors.test.ts"]
     },
     {
+      "id": "RAIL-FOLDER-TINT",
+      "title": "봇 목록 열린 폴더 배경 (한 칸·두 칸)",
+      "criticality": "core-ux",
+      "ownerFiles": ["src/lib/SideBars/Sidebar.svelte"],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "RAIL-FOLDER-TINT (2026-11-23)" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": ": 'bg-textcolor/5'" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "border border-selected py-1 {railFolderTint(item.char.color)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "border border-selected py-1 {railFolderTint(child.color)}" }
+      ],
+      "regressionTests": []
+    },
+    {
       "id": "BOT-LINK-FOLDER",
       "title": "모듈을 가진 봇을 봇 목록 [링크] 폴더로 모으기",
       "criticality": "core-ux",
