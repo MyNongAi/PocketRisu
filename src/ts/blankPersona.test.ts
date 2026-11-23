@@ -52,6 +52,15 @@ describe('splitBlankPersona', () => {
         expect(db.username).toBe('Alpha')
     })
 
+    // KO-VIEW-AGENT (2026-11-23)
+    it('moves the Korean view of the description with it', () => {
+        const ko = { personaPrompt: { text: '기사', src: 'fp' } }
+        const db = { personas: [{ ...blank(), nodeOnlyKo: ko }], selectedPersona: 0, username: 'Kim', personaPrompt: 'knight', userIcon: '', userNote: '' }
+        splitBlankPersona(db, 'new-id', 5)
+        expect(db.personas[1].nodeOnlyKo).toEqual(ko)
+        expect('nodeOnlyKo' in db.personas[0]).toBe(false)
+    })
+
     it('leaves a blank blank persona and a list without one alone', () => {
         const db = { personas: [other(), blank()], selectedPersona: 1, username: '', personaPrompt: '', userIcon: '', userNote: '빈 페르소나' }
         expect(splitBlankPersona(db, 'x')).toBe(-1)

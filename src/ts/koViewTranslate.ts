@@ -12,6 +12,9 @@ export async function translateKoView(english: string): Promise<string> {
     if (type === 'none' || !db.translator) throw new Error('translator-none')
     const llm = type === 'llm'
     const result: string[] = []
+    // KO-VIEW-AGENT (2026-11-23): names and labels may legitimately stay unchanged.
+    let translatable = false
+    let changed = false
     // Separators stay outside translate(), whose existing path trims its output.
     const parts = english.split(llm ? /(\n\s*\n)/ : /(\n+)/)
     for (const part of parts) {
@@ -21,15 +24,18 @@ export async function translateKoView(english: string): Promise<string> {
         for (const chunk of chunkKoText(masked?.text ?? part, llm ? 6000 : 1500)) {
             const source = chunk
             if (!source.trim()) { translatedChunks.push(chunk); continue }
+            if (/[A-Za-z]/.test(source)) translatable = true
             // translate() joins a chunk's lines without a break before it sends
             // them, so a paragraph's lines would run together. The LLM translator
             // goes through translateHTML, which sends the text as it is (the chat's
             // own translate path); the others get one line at a time (split above).
             const translated = llm ? await translateHTML(source, false, '', -1) : await translate(source, false)
-            if (typeof translated !== 'string' || translated.startsWith('ERR::') || (translated === source && /[A-Za-z]/.test(source))) throw new Error('translation-failed')
+            if (typeof translated !== 'string' || translated.startsWith('ERR::')) throw new Error('translation-failed')
+            if (translated !== source) changed = true
             translatedChunks.push(translated)
         }
         result.push(masked ? masked.restore(translatedChunks.join('')) : translatedChunks.join(''))
     }
+    if (translatable && !changed) throw new Error('translation-failed')
     return result.join('')
 }

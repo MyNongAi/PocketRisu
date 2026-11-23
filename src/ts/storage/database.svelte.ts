@@ -1120,6 +1120,8 @@ export interface DynamicOutput {
 
 export interface RisuPersona {
     personaPrompt:string
+    /** KO-VIEW-AGENT (2026-11-23): PocketRisu-only Korean reading text. */
+    nodeOnlyKo?: import('../koView').KoMap
     name:string
     icon:string
     largePortrait?:boolean

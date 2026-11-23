@@ -457,7 +457,8 @@
         <div class="flex flex-col min-w-0 gap-4">
             <div class="flex flex-col gap-1">
                 <SettingFieldLabel label={language.description} helpKey="personaDescription" />
-                <TextAreaInput className="mt-1" autocomplete="off" bind:value={DBState.db.personaPrompt} placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />
+                <!-- KO-VIEW-AGENT (2026-11-23): the selected persona owns Korean; the root value mirrors its live English. -->
+                <TextAreaInput className="mt-1" autocomplete="off" bind:value={DBState.db.personaPrompt} koView={{ owner: DBState.db.personas[DBState.db.selectedPersona], key: 'personaPrompt' }} placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />
             </div>
             <div class="flex items-center justify-between gap-3">
                 <div class="flex flex-col min-w-0">

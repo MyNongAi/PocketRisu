@@ -5,6 +5,7 @@ import { DBState } from 'src/ts/stores.svelte'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { RPCToolCallTextContent } from '../../mcplib'
 import { ModuleHandler } from '../modules'
+import { fingerprint } from 'src/ts/koView'
 
 //#region module mocks
 
@@ -169,6 +170,21 @@ test('retrieves fields of a lorebook', async () => {
   DBState.db.modules = [module]
 
   expect(await instance.handle('risu-get-module-lorebook', { id: 'A', names: ['0', '2', '99'] })).toMatchSnapshot()
+})
+
+test('writes, reports staleness and removes Korean module lorebook content', async () => {
+  const module = makeModule('ko-module')
+  DBState.db.modules = [module]
+  const approve = vi.fn(async () => true)
+  const handler = new ModuleHandler(approve)
+  await handler.handle('risu-set-module-lorebook', { id: module.id, name: 'entry', content: 'Hello {{user}}', koContent: '안녕 {{user}}' })
+  expect(approve).toHaveBeenCalledTimes(1)
+  expect(module.lorebook?.[0].nodeOnlyKo?.content).toEqual({ text: '안녕 {{user}}', src: fingerprint('Hello {{user}}') })
+  expect(JSON.parse(((await handler.handle('risu-get-module-lorebook', { id: module.id, names: ['entry'] }))![0] as RPCToolCallTextContent).text)).toMatchObject([{ koContent: { text: '안녕 {{user}}', stale: false } }])
+  await handler.handle('risu-set-module-lorebook', { id: module.id, name: 'entry', content: 'Changed' })
+  expect(JSON.parse(((await handler.handle('risu-get-module-lorebook', { id: module.id, names: ['entry'] }))![0] as RPCToolCallTextContent).text)).toMatchObject([{ koContent: { stale: true } }])
+  await handler.handle('risu-set-module-lorebook', { id: module.id, name: 'entry', koContent: '' })
+  expect(module.lorebook?.[0].nodeOnlyKo).toBeUndefined()
 })
 
 test('lists all regex scripts of a module', async () => {

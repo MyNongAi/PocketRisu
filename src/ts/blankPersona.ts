@@ -61,7 +61,9 @@ export function splitBlankPersona(db: PersonaRoot, newId: string, now = Date.now
         createdAt: now,
         lastAppliedAt: now,
     })
-    db.personas[index] = { ...blank, name: BLANK_PERSONA_NAME, personaPrompt: '', icon: '', largePortrait: false }
+    // KO-VIEW-AGENT (2026-11-23): the Korean of the description went with it.
+    const { nodeOnlyKo: _ko, ...emptied } = blank
+    db.personas[index] = { ...emptied, name: BLANK_PERSONA_NAME, personaPrompt: '', icon: '', largePortrait: false }
     if (selected) {
         db.selectedPersona = db.personas.length - 1
         db.userNote = note

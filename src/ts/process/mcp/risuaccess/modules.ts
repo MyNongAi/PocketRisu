@@ -1,9 +1,11 @@
 import { DBState } from 'src/ts/stores.svelte'
+import type { loreBook } from 'src/ts/storage/database.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory } from '../../moduleSort'
 import { wakeModules } from '../../moduleCold.svelte'
 import { mcpWriteAccess, type WriteAccess } from './writeAccess'
+import { fingerprint, isKoStale, setKoEntry } from 'src/ts/koView'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
@@ -125,7 +127,7 @@ export class ModuleHandler extends MCPToolHandler {
         name: 'risu-list-module-lorebooks',
       },
       {
-        description: 'Get lorebooks with specific names from a Risuai module.',
+        description: 'Get English lorebook source content and Korean reading text (koContent) with a stale flag. Korean is never sent to the model.',
         inputSchema: {
           properties: {
             id: {
@@ -144,7 +146,7 @@ export class ModuleHandler extends MCPToolHandler {
         name: 'risu-get-module-lorebook',
       },
       {
-        description: 'Update an existing lorebook of a Risuai module, or create a new one if it does not exist.',
+        description: 'Set English lorebook source content and its Korean reading translation (koContent) in the same call. Korean is only for the user, never the model. Preserve {{...}} macros, <...> tags, names and formatting.',
         inputSchema: {
           properties: {
             alwaysActive: {
@@ -153,9 +155,10 @@ export class ModuleHandler extends MCPToolHandler {
               type: 'boolean',
             },
             content: {
-              description: 'The text content to be inserted into the context.',
+              description: 'English source content used by the bot; also supply koContent when writing it.',
               type: 'string',
             },
+            koContent: { type: 'string', description: 'Korean reading translation of content; empty string removes it.' },
             id: {
               description: 'The ID of the module.',
               type: 'string',
@@ -326,7 +329,7 @@ export class ModuleHandler extends MCPToolHandler {
       case 'risu-get-module-lorebook':
         return await this.getModuleLorebook(args.id, args.names)
       case 'risu-set-module-lorebook':
-        return await this.setModuleLorebook(args.id, args.name, args.content, args.keys, args.newName, args.alwaysActive)
+        return await this.setModuleLorebook(args.id, args.name, args.content, args.keys, args.newName, args.alwaysActive, args.koContent)
       case 'risu-delete-module-lorebook':
         return await this.deleteModuleLorebook(args.id, args.name)
       case 'risu-get-module-regex-scripts':
@@ -543,6 +546,8 @@ export class ModuleHandler extends MCPToolHandler {
       content: entry.content,
       keys: entry.key,
       name: entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content),
+      // KO-VIEW-AGENT (2026-11-23): report whether English changed after Korean was written.
+      koContent: entry.nodeOnlyKo?.content ? { text: entry.nodeOnlyKo.content.text, stale: isKoStale(entry.nodeOnlyKo.content, entry.content) } : undefined,
     }))
 
     return [
@@ -559,7 +564,8 @@ export class ModuleHandler extends MCPToolHandler {
     content?: string,
     keys?: string[],
     newName?: string,
-    alwaysActive?: boolean
+    alwaysActive?: boolean,
+    koContent?: string
   ): Promise<RPCToolCallContent[]> {
     const module = DBState.db.modules.find((m) => m.id === id)
     if (!module || module.mcp) {
@@ -585,7 +591,7 @@ export class ModuleHandler extends MCPToolHandler {
     })
 
     if (index === -1) {
-      const newEntry = {
+      const newEntry: loreBook = {
         key: alwaysActive ? '' : keys?.join(',') || '',
         content: content || '',
         comment: newName || name,
@@ -595,6 +601,7 @@ export class ModuleHandler extends MCPToolHandler {
         insertorder: 100,
         mode: 'normal' as const,
       }
+      if (koContent !== undefined) setKoEntry(newEntry, 'content', koContent ? { text: koContent, src: fingerprint(newEntry.content) } : undefined)
       module.lorebook.push(newEntry)
       return [
         {
@@ -609,6 +616,7 @@ export class ModuleHandler extends MCPToolHandler {
     if (content !== undefined) {
       entry.content = content
     }
+    if (koContent !== undefined) setKoEntry(entry, 'content', koContent ? { text: koContent, src: fingerprint(entry.content) } : undefined)
     if (keys !== undefined) {
       entry.key = alwaysActive ? '' : keys.join(',')
     }

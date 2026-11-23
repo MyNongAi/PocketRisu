@@ -43,4 +43,22 @@ describe('KO-VIEW translation', () => {
         await expect(translateKoView('Hello')).rejects.toThrow('translation-failed')
         expect(await translateKoView('')).toBe('')
     })
+
+    it('keeps unchanged names and labels when another line translates', async () => {
+        db.translatorType = 'google'
+        translate.mockImplementation(async (text: string) => text === 'Hello' ? '안녕' : text)
+        expect(await translateKoView('Modernia\nHP: 100\nHello')).toBe('Modernia\nHP: 100\n안녕')
+    })
+
+    it('fails when no translatable line changes', async () => {
+        db.translatorType = 'google'
+        translate.mockImplementation(async (text: string) => text)
+        await expect(translateKoView('Modernia\nHP: 100')).rejects.toThrow('translation-failed')
+    })
+
+    it('still rejects translator error results', async () => {
+        db.translatorType = 'google'
+        translate.mockImplementationOnce(async () => 'ERR:: unavailable')
+        await expect(translateKoView('Hello')).rejects.toThrow('translation-failed')
+    })
 })

@@ -5,6 +5,21 @@ import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib
 import { getCharacter } from './utils'
 import { mcpWriteAccess, type WriteAccess } from './writeAccess'
 import { editAssetManifest, loadAssetManifestItems } from 'src/ts/globalApi.svelte'
+import { fingerprint, isKoStale, setKoEntry } from 'src/ts/koView'
+
+// KO-VIEW-AGENT (2026-11-23): these English source fields have separate Korean reading text.
+const koFields = ['desc', 'firstMessage', 'exampleMessage', 'systemPrompt', 'replaceGlobalNote', 'additionalText', 'personality', 'scenario'] as const
+type KoField = typeof koFields[number]
+// The tool's own names for two of them (`data` uses these) name the same Korean.
+const koAliases: Record<string, KoField> = { description: 'desc', greeting: 'firstMessage' }
+function koFieldOf(field: string): KoField | undefined {
+  return koAliases[field] ?? (koFields.includes(field as KoField) ? field as KoField : undefined)
+}
+const koProperties = Object.fromEntries([...Object.keys(koAliases), ...koFields].map((key) => [key, { type: 'string', description: 'Korean reading text; empty string removes it. Keep {{...}} macros, <...> tags, names and formatting unchanged.' }]))
+function koResult(owner: { nodeOnlyKo?: Record<string, { text: string, src: string }> }, key: string, english: string) {
+  const entry = owner.nodeOnlyKo?.[key]
+  return entry ? { text: entry.text, stale: isKoStale(entry, english) } : undefined
+}
 
 export class CharacterHandler extends MCPToolHandler {
   constructor(private readonly writeAccess: WriteAccess = mcpWriteAccess) {
@@ -19,7 +34,7 @@ export class CharacterHandler extends MCPToolHandler {
   getTools(): MCPTool[] {
     return [
       {
-        description: 'Get basic information about a Risuai character.',
+        description: 'Get English bot source fields and their stored Korean reading text (ko) with stale flags. Korean is never sent to the model.',
         inputSchema: {
           properties: {
             fields: {
@@ -33,6 +48,7 @@ export class CharacterHandler extends MCPToolHandler {
                   'id',
                   'name',
                   'replaceGlobalNote',
+                  ...koFields,
                 ],
                 type: 'string',
               },
@@ -72,7 +88,7 @@ export class CharacterHandler extends MCPToolHandler {
         name: 'risu-list-character-lorebooks',
       },
       {
-        description: 'Get lorebooks with specific names from a Risuai character.',
+        description: 'Get English lorebook source content and Korean reading text (koContent) with a stale flag. Korean is never sent to the model.',
         inputSchema: {
           properties: {
             id: {
@@ -91,11 +107,11 @@ export class CharacterHandler extends MCPToolHandler {
         name: 'risu-get-character-lorebook',
       },
       {
-        description: 'Set basic information about a Risuai character.',
+        description: 'Set English bot source fields. Also write their Korean translations in ko in the same call; Korean is only for the user, never the model. Preserve {{...}} macros, <...> tags, names and formatting.',
         inputSchema: {
           properties: {
             data: {
-              description: 'A map of fields to their new values.',
+              description: 'English source values used by the bot; for each changed Korean-view field, supply its translation in ko.',
               properties: {
                 alternateGreetings: {
                   items: { type: 'string' },
@@ -106,6 +122,7 @@ export class CharacterHandler extends MCPToolHandler {
                 greeting: { type: 'string' },
                 name: { type: 'string' },
                 replaceGlobalNote: { type: 'string' },
+                ...Object.fromEntries(koFields.map((key) => [key, { type: 'string' }])),
               },
               type: 'object',
             },
@@ -113,6 +130,7 @@ export class CharacterHandler extends MCPToolHandler {
               description: 'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
             },
+            ko: { type: 'object', properties: koProperties, description: 'Korean reading translations, keyed like data (description, greeting, or the stored names desc, firstMessage, exampleMessage, systemPrompt, replaceGlobalNote, additionalText, personality, scenario). Never sent to the model; empty string removes one. Preserve {{...}} macros, <...> tags, names and formatting.' },
           },
           required: ['data', 'id'],
           type: 'object',
@@ -120,7 +138,7 @@ export class CharacterHandler extends MCPToolHandler {
         name: 'risu-set-character-info',
       },
       {
-        description: 'Update an existing lorebook of a Risuai character, or create a new one if it does not exist.',
+        description: 'Set English lorebook source content and its Korean reading translation (koContent) in the same call. Korean is only for the user, never the model. Preserve {{...}} macros, <...> tags, names and formatting.',
         inputSchema: {
           properties: {
             alwaysActive: {
@@ -129,9 +147,10 @@ export class CharacterHandler extends MCPToolHandler {
               type: 'boolean',
             },
             content: {
-              description: 'The text content to be inserted into the context.',
+              description: 'English source content used by the bot; also supply koContent when writing it.',
               type: 'string',
             },
+            koContent: { type: 'string', description: 'Korean reading translation of content; empty string removes it.' },
             id: {
               description: 'The ID or name of the character. Use an empty string for the currently selected character.',
               type: 'string',
@@ -344,7 +363,7 @@ export class CharacterHandler extends MCPToolHandler {
       case 'risu-get-character-lorebook':
         return await this.getCharacterLorebook(args.id, args.names)
       case 'risu-set-character-info':
-        return await this.setCharacterInfo(args.id, args.data)
+        return await this.setCharacterInfo(args.id, args.data, args.ko)
       case 'risu-set-character-lorebook':
         return await this.setCharacterLorebook(
           args.id,
@@ -352,7 +371,8 @@ export class CharacterHandler extends MCPToolHandler {
           args.content,
           args.keys,
           args.newName,
-          args.alwaysActive
+          args.alwaysActive,
+          args.koContent
         )
       case 'risu-delete-character-lorebook':
         return await this.deleteCharacterLorebook(args.id, args.name)
@@ -385,7 +405,7 @@ export class CharacterHandler extends MCPToolHandler {
     return null
   }
 
-  async getCharacterInfo(id: string, fields: string[]): Promise<RPCToolCallContent[]> {
+  async getCharacterInfo(id: string, fields: string[] = ['name', ...koFields]): Promise<RPCToolCallContent[]> {
     const char: character = getCharacter(id)
     if (!char) {
       return [
@@ -408,9 +428,15 @@ export class CharacterHandler extends MCPToolHandler {
     } as const
 
     for (const field of fields) {
-      if (fieldRemap[field as keyof typeof fieldRemap]) {
-        const realField = fieldRemap[field as keyof typeof fieldRemap]
+      if (fieldRemap[field as keyof typeof fieldRemap] || koFields.includes(field as KoField)) {
+        const realField = (fieldRemap[field as keyof typeof fieldRemap] || field) as keyof character
         response[field] = char[realField]
+        const koKey = koFieldOf(field)
+        if (koKey) {
+          // Keyed by the name asked for, as `ko` is written.
+          const ko = koResult(char, koKey, String(char[koKey] ?? ''))
+          if (ko) (response.ko ??= {})[field] = ko
+        }
       } else {
         return [
           {
@@ -489,6 +515,7 @@ export class CharacterHandler extends MCPToolHandler {
       content: entry.content,
       keys: entry.key,
       name: entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content),
+      koContent: koResult(entry, 'content', entry.content),
     }))
 
     return [
@@ -499,7 +526,7 @@ export class CharacterHandler extends MCPToolHandler {
     ]
   }
 
-  async setCharacterInfo(id: string, data: any): Promise<RPCToolCallContent[]> {
+  async setCharacterInfo(id: string, data: any, ko?: Partial<Record<KoField, string>>): Promise<RPCToolCallContent[]> {
     const char: character = getCharacter(id)
     if (!char) {
       return [
@@ -527,9 +554,16 @@ export class CharacterHandler extends MCPToolHandler {
       backgroundEmbedding: 'backgroundHTML',
     } as const
 
+    if (!data || typeof data !== 'object' || (ko !== undefined && (!ko || typeof ko !== 'object' || Array.isArray(ko)))) {
+      return [{ type: 'text', text: 'Error: Invalid character data or ko.' }]
+    }
+    for (const [field, value] of Object.entries(ko ?? {})) {
+      if (!koFieldOf(field) || typeof value !== 'string') return [{ type: 'text', text: `Error: Invalid Korean field ${field}.` }]
+    }
+
     for (const [field, value] of Object.entries(data)) {
-      if (fieldRemap[field as keyof typeof fieldRemap]) {
-        const realField = fieldRemap[field as keyof typeof fieldRemap]
+      if (fieldRemap[field as keyof typeof fieldRemap] || koFields.includes(field as KoField)) {
+        const realField = (fieldRemap[field as keyof typeof fieldRemap] || field) as keyof character
         // @ts-ignore
         char[realField] = value
       } else {
@@ -540,6 +574,11 @@ export class CharacterHandler extends MCPToolHandler {
           },
         ]
       }
+    }
+
+    for (const [field, value] of Object.entries(ko ?? {})) {
+      const koKey = koFieldOf(field)!
+      setKoEntry(char, koKey, value ? { text: value, src: fingerprint(String(char[koKey] ?? '')) } : undefined)
     }
 
     return [
@@ -556,7 +595,8 @@ export class CharacterHandler extends MCPToolHandler {
     content?: string,
     keys?: string[],
     newName?: string,
-    alwaysActive?: boolean
+    alwaysActive?: boolean,
+    koContent?: string
   ): Promise<RPCToolCallContent[]> {
     const char: character = getCharacter(id)
     if (!char) {
@@ -597,6 +637,7 @@ export class CharacterHandler extends MCPToolHandler {
         insertorder: 100,
         mode: 'normal',
       }
+      if (koContent !== undefined) setKoEntry(newEntry, 'content', koContent ? { text: koContent, src: fingerprint(newEntry.content) } : undefined)
       char.globalLore.push(newEntry)
       return [
         {
@@ -611,6 +652,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (content !== undefined) {
       entry.content = content
     }
+    if (koContent !== undefined) setKoEntry(entry, 'content', koContent ? { text: koContent, src: fingerprint(entry.content) } : undefined)
     if (keys !== undefined) {
       entry.key = alwaysActive ? '' : keys.join(',')
     }

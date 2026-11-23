@@ -238,6 +238,8 @@
 
 <script module lang="ts">
     const koFieldViews = new Map<string, boolean>()
+    const anonymousKoIds = new WeakMap<object, number>()
+    let nextAnonymousKoId = 0
 </script>
 
 <script lang="ts">
@@ -318,7 +320,13 @@
     let copied = $state(false)
     let localKoActive = $state(false)
     let koBusy = $state(false)
-    const viewKey = $derived(koView && (koView.owner.chaId || koView.owner.id) ? `${koView.owner.chaId || koView.owner.id}:${koView.key}` : undefined)
+    // KO-VIEW-AGENT (2026-11-23): old personas can lack an id; object identity is stable during this session.
+    function koOwnerId(owner: object & { chaId?: string, id?: string }): string {
+        if (owner.chaId || owner.id) return owner.chaId || owner.id || ''
+        if (!anonymousKoIds.has(owner)) anonymousKoIds.set(owner, ++nextAnonymousKoId)
+        return `anonymous-${anonymousKoIds.get(owner)}`
+    }
+    const viewKey = $derived(koView ? `${koOwnerId(koView.owner)}:${koView.key}` : undefined)
     const koActive = $derived(!!koView && localKoActive)
     $effect(() => { localKoActive = viewKey ? koFieldViews.get(viewKey) === true : false })
     const shownValue = $derived(koActive ? (koView?.owner.nodeOnlyKo?.[koView.key]?.text ?? '') : (value ?? ''))

@@ -42,15 +42,21 @@
     },
     {
       "id": "KO-VIEW",
-      "title": "봇과 로어북 한국어 보기",
+      "title": "봇·로어북·페르소나 한국어 보기와 MCP 번역 입력",
       "criticality": "core-ux",
-      "ownerFiles": ["src/ts/koView.ts", "src/ts/koViewTranslate.ts", "src/lib/UI/GUI/TextAreaInput.svelte", "src/lib/SideBars/CharConfig.svelte", "src/lib/SideBars/LoreBook/LoreBookData.svelte", "src/ts/characterCards.ts", "src/ts/process/moduleImport.ts", "src/lang/en.ts", "src/lang/ko.ts"],
+      "ownerFiles": ["src/ts/koView.ts", "src/ts/koViewTranslate.ts", "src/lib/UI/GUI/TextAreaInput.svelte", "src/lib/SideBars/CharConfig.svelte", "src/lib/SideBars/LoreBook/LoreBookData.svelte", "src/lib/Setting/Pages/PersonaSettings.svelte", "src/ts/blankPersona.ts", "src/ts/storage/database.svelte.ts", "src/ts/process/mcp/risuaccess/characters.ts", "src/ts/process/mcp/risuaccess/modules.ts", "src/ts/characterCards.ts", "src/ts/process/moduleImport.ts", "src/lang/en.ts", "src/lang/ko.ts"],
       "requiredMarkers": [
         { "file": "src/ts/koView.ts", "contains": "KO-VIEW (2026-11-22)" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "KO-VIEW (2026-11-22)" },
-        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "KO-VIEW (2026-11-22)" }
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "KO-VIEW (2026-11-22)" },
+        { "file": "src/ts/process/mcp/risuaccess/characters.ts", "contains": "KO-VIEW-AGENT (2026-11-23)" },
+        { "file": "src/ts/process/mcp/risuaccess/modules.ts", "contains": "KO-VIEW-AGENT (2026-11-23)" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "KO-VIEW-AGENT (2026-11-23)" },
+        { "file": "src/ts/koViewTranslate.ts", "contains": "KO-VIEW-AGENT (2026-11-23)" },
+        { "file": "src/ts/blankPersona.ts", "contains": "const { nodeOnlyKo: _ko, ...emptied } = blank" },
+        { "file": "src/ts/process/mcp/risuaccess/characters.ts", "contains": "const koAliases: Record<string, KoField> = { description: 'desc', greeting: 'firstMessage' }" }
       ],
-      "regressionTests": ["src/ts/koView.test.ts", "src/ts/koViewTranslate.test.ts", "src/ts/characterCards.koView.test.ts"]
+      "regressionTests": ["src/ts/koView.test.ts", "src/ts/koViewTranslate.test.ts", "src/ts/characterCards.koView.test.ts", "src/ts/process/mcp/risuaccess/tests/koViewAgent.test.ts", "src/ts/process/mcp/risuaccess/tests/modules.test.ts", "src/ts/blankPersona.test.ts"]
     },
     {
       "id": "CHAT-SEARCH",
