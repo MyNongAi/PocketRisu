@@ -1559,7 +1559,7 @@
         { "file": "src/ts/realmCompanionModule.ts", "contains": "const modules = await downloadShareModules(link, { browse: true })" },
         { "file": "src/lib/UI/Realm/RealmPopUp.svelte", "contains": "await importRealmDescriptionModules(openedData.desc ?? '', () =>" },
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "forgetModulePair(DBState.db.modules, moduleId, character.chaId)" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "<Link2Icon size={18}/>" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "MODULE-CHAT-MENU-BOT-GLOBE (2026-11-23)" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "backfillModulePairs(data.modules, data.characters)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.removeWithModules, () => removeBotWithModules(character.chaId), deleteRow]" },
         { "file": "src/ts/gui/botModuleRemoval.ts", "contains": "|| (module.nodeOnlyPairedCharacterIds ?? []).some((id) => otherBots.has(id))" },
@@ -2172,6 +2172,25 @@
       ],
       "regressionTests": [
         "src/ts/process/request/contextBudget.test.ts"
+      ]
+    },
+    {
+      "id": "MODULE-SIDEPANEL-CHAT-SCOPE",
+      "title": "사이드 모듈 패널에서 현재 채팅 범위로 활성화",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lang/en.ts",
+        "src/lang/ko.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "MODULE-SIDEPANEL-CHAT-SCOPE (2026-11-23)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleChatScope(" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleFolderChat(" },
+        { "file": "src/lang/ko.ts", "contains": "moduleChatRequiresOpenChat:" }
+      ],
+      "regressionTests": [
+        "src/lib/Setting/Pages/Module/ModuleSettings.chatScope.test.ts"
       ]
     },
     {

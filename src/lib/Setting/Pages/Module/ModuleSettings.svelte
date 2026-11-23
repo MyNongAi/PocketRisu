@@ -4,7 +4,7 @@
     import NewMark from "src/lib/UI/NewMark.svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
 
-    import { DBState, selectedCharID } from 'src/ts/stores.svelte';
+    import { DBState, ReloadGUIPointer, selectedCharID } from 'src/ts/stores.svelte';
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
@@ -12,7 +12,7 @@
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, refreshModules, rerenderChatForModules, syncFavoriteModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
     import { importModuleFiles, importModuleFromProtonDrive } from "src/ts/process/moduleImport";
     import { favoriteAfterMove, isModuleFavoritesFolder } from "src/ts/process/moduleFavoritesFolder";
-    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon, InfoIcon } from "@lucide/svelte";
+    import { Clock3Icon, SquarePen, Globe, MessageSquareIcon, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon, InfoIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -86,7 +86,7 @@
     // hold the top (the user's rule, 2026-10-27: "즐찾만 고정"), and under
     // them the modules on now (2026-10-30; interleaveModuleCatalogGroups).
     let recencyOptions = $derived({
-        fallbackOrders: [DBState.db.enabledModules],
+        fallbackOrders: moduleFallbackOrders(),
         activationHistory: DBState.db.moduleActivationHistory,
     })
     let displayModules = $derived(moduleCatalogSort === 'registered'
@@ -95,7 +95,7 @@
     let favoriteModuleIndexes = $derived(new Set(displayModules.flatMap((module, index) => module?.favorite ? [index] : [])))
     // The blue and orange ones, 🎨 with the bot's illustration toggle on too.
     let activeModuleIndexes = $derived(new Set(displayModules.flatMap((module, index) => module
-        && (isGlobal(module) || isIntegrated(module) || isBotModule(module) || isIllustrationOn(module) || isEditModeOn(module)) ? [index] : [])))
+        && (isGlobal(module) || (sidePanel && isInChat(module)) || isIntegrated(module) || isBotModule(module) || isIllustrationOn(module) || isEditModeOn(module)) ? [index] : [])))
     let displayFolders = $derived(moduleCatalogSort === 'registered'
         ? [...(DBState.db.moduleFolders ?? [])]
         : sortModuleFoldersByActivation(
@@ -159,6 +159,22 @@
 
     function isGlobal(rmodule: RisuModule) {
         return DBState.db.enabledModules.includes(rmodule.id)
+    }
+
+    // MODULE-SIDEPANEL-CHAT-SCOPE (2026-11-23): the quick panel follows the open chat.
+    function currentChat() {
+        const character = DBState.db.characters[$selectedCharID]
+        return character?.chats?.[character.chatPage]
+    }
+
+    function isInChat(rmodule: RisuModule) {
+        return !!currentChat()?.modules?.includes(rmodule.id)
+    }
+
+    function moduleFallbackOrders() {
+        return sidePanel
+            ? [DBState.db.enabledModules, DBState.db.characters[$selectedCharID]?.modules, currentChat()?.modules]
+            : [DBState.db.enabledModules]
     }
 
     // A module the open bot has as its own (character.modules) is on by
@@ -229,7 +245,7 @@
 
     function rememberActivation(moduleId: string) {
         DBState.db.moduleActivationHistory = recordModuleActivation(
-            seedModuleActivationHistory(DBState.db.moduleActivationHistory, DBState.db.enabledModules),
+            seedModuleActivationHistory(DBState.db.moduleActivationHistory, ...moduleFallbackOrders()),
             moduleId,
         )
         DBState.db.moduleFolders = recordModuleFolderActivation(
@@ -248,6 +264,37 @@
             void wakeModules([rmodule.id])
         }
         DBState.db.enabledModules = DBState.db.enabledModules
+    }
+
+    function toggleChatScope(moduleId: string) {
+        const chat = currentChat()
+        if (!chat) return
+        chat.modules ??= []
+        if (chat.modules.includes(moduleId)) chat.modules.splice(chat.modules.indexOf(moduleId), 1)
+        else {
+            chat.modules.push(moduleId)
+            rememberActivation(moduleId)
+            void wakeModules([moduleId])
+        }
+        chat.modules = chat.modules
+        $ReloadGUIPointer += 1
+    }
+
+    function toggleFolderChat(indexes: number[]) {
+        const chat = currentChat()
+        if (!chat) return
+        const ids = folderModuleIds(indexes).filter((id) => !DBState.db.enabledModules.includes(id))
+        if (ids.length === 0) return
+        const modules = chat.modules ?? []
+        if (ids.every((id) => modules.includes(id))) {
+            chat.modules = modules.filter((id) => !ids.includes(id))
+        } else {
+            const added = ids.filter((id) => !modules.includes(id))
+            chat.modules = [...modules, ...added]
+            for (const id of added) rememberActivation(id)
+            void wakeModules(added)
+        }
+        $ReloadGUIPointer += 1
     }
 
     // The bot open now: a module's ⋮ menu links the module to it as one of
@@ -430,14 +477,14 @@
             DBState.db.moduleActivationHistory = activationHistoryFromDisplay(
                 placedAfter.map((item) => item.id),
                 DBState.db.moduleActivationHistory,
-                [DBState.db.enabledModules],
+                moduleFallbackOrders(),
             )
         } else {
             DBState.db.moduleActivationHistory = activationHistoryAfterPlacement(
                 placedBefore,
                 placedAfter,
                 DBState.db.moduleActivationHistory ?? [],
-                [DBState.db.enabledModules],
+                moduleFallbackOrders(),
             )
         }
         DBState.db.moduleFolders = recordModuleFolderOrder(DBState.db.moduleFolders)
@@ -501,7 +548,7 @@
                 const members = DBState.db.modules
                     .filter((module) => (module.folderId && inside.has(module.folderId)) || changed.some((item) => inside.has(item.id) && item.moduleIds?.includes(module.id)))
                     .map((module) => module.id)
-                DBState.db.moduleActivationHistory = liftModulesToNewest(DBState.db.moduleActivationHistory, [DBState.db.enabledModules], members)
+                DBState.db.moduleActivationHistory = liftModulesToNewest(DBState.db.moduleActivationHistory, moduleFallbackOrders(), members)
             }
         }
         applyFolders(changed)
@@ -622,7 +669,9 @@
             {/if}
         {/snippet}
         {#snippet folderActions(_folder, _indexes, shownIndexes)}
-            {@const activeCount = shownIndexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
+            {@const activeCount = shownIndexes.filter((index) => { const rmodule = displayModules[index]; return !!rmodule && (isGlobal(rmodule) || (sidePanel && isInChat(rmodule))) }).length}
+            {@const chatCount = sidePanel ? shownIndexes.filter((index) => { const rmodule = displayModules[index]; return !!rmodule && !isGlobal(rmodule) && isInChat(rmodule) }).length : 0}
+            {@const globalCount = activeCount - chatCount}
             <!-- Orange when a module inside is on by itself (the open bot's own, an
                  integrated one, or 🎨 with the bot's illustration on) the way its own
                  globe is drawn, unless one is global (the user's request, 2026-10-28). -->
@@ -630,18 +679,20 @@
                 const rmodule = displayModules[index]
                 return !!rmodule && !isGlobal(rmodule) && (isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule))
             }).length}
-            {@const folderGlobeLabel = `폴더 모듈 전체 활성화 (${activeCount}/${shownIndexes.length})${autoCount > 0 ? ` · 자동으로 켜짐 ${autoCount}개` : ''}`}
-            <button
-                class="no-sort shrink-0 rounded-sm p-1 cursor-pointer {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : autoCount > 0 ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+            {@const folderGlobeLabel = sidePanel ? `${language.moduleScopeChat} (${activeCount}/${shownIndexes.length})${!currentChat() ? ` · ${language.moduleChatRequiresOpenChat}` : ''}` : `폴더 모듈 전체 활성화 (${activeCount}/${shownIndexes.length})${autoCount > 0 ? ` · 자동으로 켜짐 ${autoCount}개` : ''}`}
+            <span class="no-sort shrink-0" use:tooltip={folderGlobeLabel}><button
+                class="no-sort shrink-0 rounded-sm p-1 {sidePanel && !currentChat() ? 'cursor-not-allowed' : 'cursor-pointer'} {sidePanel && chatCount > 0 ? 'text-blue-500 bg-blue-500/15' : globalCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : autoCount > 0 ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
                 title={folderGlobeLabel}
                 aria-label={folderGlobeLabel}
-                onclick={(event) => { event.stopPropagation(); toggleFolderGlobal(shownIndexes) }}
-            ><Globe size={17}/></button>
+                disabled={sidePanel && !currentChat()}
+                onclick={(event) => { event.stopPropagation(); if (sidePanel) toggleFolderChat(shownIndexes); else toggleFolderGlobal(shownIndexes) }}
+            >{#if sidePanel}<MessageSquareIcon size={17}/>{:else}<Globe size={17}/>{/if}</button></span>
         {/snippet}
         {#snippet folderCount(_folder, shownIndexes)}
             <!-- On / all, as the chat module menu shows it (the user's request, 2026-11-20: "N/47"); the same count as the globe. -->
-            {@const activeCount = shownIndexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
-            <span class="text-xs {activeCount > 0 ? 'text-emerald-500' : 'text-textcolor2'}">{activeCount > 0 ? `${activeCount}/` : ''}{shownIndexes.length}</span>
+            {@const activeCount = shownIndexes.filter((index) => { const rmodule = displayModules[index]; return !!rmodule && (isGlobal(rmodule) || (sidePanel && isInChat(rmodule))) }).length}
+            {@const chatCount = sidePanel ? shownIndexes.filter((index) => { const rmodule = displayModules[index]; return !!rmodule && !isGlobal(rmodule) && isInChat(rmodule) }).length : 0}
+            <span class="text-xs {chatCount > 0 ? 'text-blue-500' : activeCount > 0 ? 'text-emerald-500' : 'text-textcolor2'}">{activeCount > 0 ? `${activeCount}/` : ''}{shownIndexes.length}</span>
         {/snippet}
         {#snippet folderMenuItems(_folder, indexes)}
             {#if openBot && indexes.length > 0}
@@ -657,6 +708,7 @@
             {@const rmodule = displayModules[index]}
             {@const source = moduleSource(rmodule)}
             {@const globeLabel = `${isGlobal(rmodule) ? language.enableGlobal : isBotModule(rmodule) ? language.moduleAutoForBot : isIllustrationOn(rmodule) ? language.moduleAutoForIllustration : isEditModeOn(rmodule) ? language.moduleAutoForEditMode : language.enableGlobal}${openBot ? ' · 꾹 누르면 지금 봇에 연결/해제' : ''}`}
+            {@const chatLabel = `${language.moduleScopeChat}${currentChat() ? '' : ` · ${language.moduleChatRequiresOpenChat}`}${openBot ? ' · 꾹 누르면 지금 봇에 연결/해제' : ''}`}
             {#if rmodule.mcp}
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
@@ -674,13 +726,23 @@
                     · 에셋 {moduleAssetCount(rmodule)}개{#if isColdModule(rmodule)} · {language.moduleColdBadge}{/if} · {rmodule.description || 'No description provided'}
                 </span>
             </div>
-            <!-- MODULE-BOT-LINK-MENU: globe hold links the open bot (user request, 2026-11-20). -->
-            <button class="no-sort select-none [-webkit-touch-callout:none] shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
-                use:tooltip={globeLabel}
-                use:moduleGlobeHold={{ tap: () => toggleGlobal(rmodule), hold: () => toggleBotLink(rmodule), canHold: () => !!openBot }}
-                aria-label={globeLabel}>
-                <Globe size={18}/>
-            </button>
+            {#if sidePanel && isGlobal(rmodule)}
+                <span class="no-sort shrink-0 p-1 rounded-sm text-emerald-500 bg-emerald-500/15" title={language.moduleScopeGlobal} aria-label={language.moduleScopeGlobal}><Globe size={18}/></span>
+            {:else if sidePanel}
+                <span class="no-sort shrink-0" use:tooltip={chatLabel}>
+                    <button class="select-none [-webkit-touch-callout:none] p-1 rounded-sm {currentChat() ? 'cursor-pointer' : 'cursor-not-allowed'} {isInChat(rmodule) ? 'text-blue-500 bg-blue-500/15' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                        use:moduleGlobeHold={{ tap: () => toggleChatScope(rmodule.id), hold: () => toggleBotLink(rmodule), canHold: () => !!openBot }}
+                        disabled={!currentChat()} title={chatLabel} aria-label={chatLabel} aria-pressed={isInChat(rmodule)}><MessageSquareIcon size={18}/></button>
+                </span>
+            {:else}
+                <!-- MODULE-BOT-LINK-MENU: globe hold links the open bot (user request, 2026-11-20). -->
+                <button class="no-sort select-none [-webkit-touch-callout:none] shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                    use:tooltip={globeLabel}
+                    use:moduleGlobeHold={{ tap: () => toggleGlobal(rmodule), hold: () => toggleBotLink(rmodule), canHold: () => !!openBot }}
+                    aria-label={globeLabel}>
+                    <Globe size={18}/>
+                </button>
+            {/if}
         {/snippet}
         {#snippet itemMenu(index)}
             {@const rmodule = displayModules[index]}
