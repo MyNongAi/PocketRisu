@@ -48,14 +48,15 @@ describe('folderForChatCopy', () => {
         expect(makeId).not.toHaveBeenCalled()
     })
 
-    it('creates a new point folder when the original grows, then reuses it', () => {
+    it('moves a grown original into its new point folder with the copy, then reuses it', () => {
         const point5: ChatFolder = { id: 'point-5', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 5 } }
         const owner = { chatFolders: [point5] }
         const source = { id: 'original', name: 'Original', folderId: 'point-5' }
         const makeId = vi.fn(() => 'point-6')
 
         expect(folderForChatCopy(owner, source, 6, true, makeId)).toBe('point-6')
-        expect(source.folderId).toBe('point-5')
+        // The copied chat and its copy share the folder; the copies at 5 stay at 5.
+        expect(source.folderId).toBe('point-6')
         expect(owner.chatFolders).toEqual([
             { id: 'point-6', name: 'Branches of Original', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 6 } },
             point5,
@@ -80,7 +81,7 @@ describe('folderForChatCopy', () => {
         ])
     })
 
-    it('gives a grown copy its own next point folder', () => {
+    it('gives a grown copy its own next point folder and moves it in', () => {
         const owner: { chatFolders: ChatFolder[] } = { chatFolders: [
             { id: 'point-5', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 5 } },
             { id: 'original-6', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 6 } },
@@ -88,22 +89,42 @@ describe('folderForChatCopy', () => {
         const copy = { id: 'copy', name: 'Copy', folderId: 'point-5' }
 
         expect(folderForChatCopy(owner, copy, 6, true, () => 'copy-6')).toBe('copy-6')
-        expect(copy.folderId).toBe('point-5')
+        expect(copy.folderId).toBe('copy-6')
         expect(owner.chatFolders[0].nodeOnlyCopyPoint).toEqual({ chatId: 'copy', messages: 6 })
         expect(owner.chatFolders).toHaveLength(3)
     })
 
-    it('leaves a source in its user folder when creating a point folder', () => {
+    it('moves a loose chat back in when its point folder already exists', () => {
+        const point6: ChatFolder = { id: 'point-6', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 6 } }
+        const owner = { chatFolders: [point6] }
+        const source: { id: string, name: string, folderId?: string } = { id: 'original', name: 'Original' }
+        const makeId = vi.fn(() => 'new')
+
+        expect(folderForChatCopy(owner, source, 6, true, makeId)).toBe('point-6')
+        expect(source.folderId).toBe('point-6')
+        expect(makeId).not.toHaveBeenCalled()
+    })
+
+    it('puts the copy of a chat in a user folder into that folder', () => {
         const userFolder: ChatFolder = { id: 'user', name: 'My chats', folded: false }
         const owner = { chatFolders: [userFolder] }
         const source = { id: 'original', name: 'Original', folderId: 'user' }
+        const makeId = vi.fn(() => 'new')
 
-        expect(folderForChatCopy(owner, source, 5, true, () => 'point-5')).toBe('point-5')
+        expect(folderForChatCopy(owner, source, 5, true, makeId)).toBe('user')
         expect(source.folderId).toBe('user')
-        expect(owner.chatFolders).toEqual([
-            { id: 'point-5', name: 'Branches of Original', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 5 } },
-            userFolder,
-        ])
+        expect(owner.chatFolders).toEqual([userFolder])
+        expect(makeId).not.toHaveBeenCalled()
+    })
+
+    it('puts the copy of a chat in a folder from before points into that folder', () => {
+        const oldFolder: ChatFolder = { id: 'old', name: 'Branches of Original', folded: false }
+        const owner = { chatFolders: [oldFolder] }
+        const source = { id: 'original', name: 'Original', folderId: 'old' }
+
+        expect(folderForChatCopy(owner, source, 9, true, () => 'new')).toBe('old')
+        expect(source.folderId).toBe('old')
+        expect(owner.chatFolders).toEqual([oldFolder])
     })
 
     it('treats a missing folder id as loose', () => {
