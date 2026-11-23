@@ -2176,7 +2176,7 @@
     },
     {
       "id": "MODULE-SIDEPANEL-CHAT-SCOPE",
-      "title": "사이드 모듈 패널에서 현재 채팅 범위로 활성화",
+      "title": "사이드 모듈 패널에서 상태별 탭과 범위 메뉴",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
@@ -2185,6 +2185,8 @@
       ],
       "requiredMarkers": [
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "MODULE-SIDEPANEL-CHAT-SCOPE (2026-11-23)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "MODULE-SIDEPANEL-SCOPE-MENU (2026-11-23)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function tapSideScope(" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleChatScope(" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleFolderChat(" },
         { "file": "src/lang/ko.ts", "contains": "moduleChatRequiresOpenChat:" }

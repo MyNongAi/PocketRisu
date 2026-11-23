@@ -39,45 +39,104 @@ async function mountSettings(sidePanel: boolean) {
     return target
 }
 
-function moduleButton(target: HTMLElement, label: string) {
-    return [...target.querySelectorAll<HTMLButtonElement>('button.select-none')]
-        .find((button) => button.getAttribute('aria-label')?.includes(label))
+function moduleButton(target: HTMLElement) {
+    return target.querySelector<HTMLButtonElement>('button[data-scope-button]')!
+}
+
+async function openScopeMenu(target: HTMLElement) {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    moduleButton(target).dispatchEvent(event)
+    await settle()
+    expect(event.defaultPrevented).toBe(true)
+}
+
+function menuItem(label: string) {
+    return [...document.body.querySelectorAll<HTMLElement>('[data-slot="dropdown-menu-item"]')]
+        .find((item) => item.textContent?.includes(label))!
 }
 
 describe('ModuleSettings activation scope', () => {
     it('toggles only the open chat from the side panel', async () => {
         useTogglesTestDb()
         const target = await mountSettings(true)
-        const button = moduleButton(target, language.moduleScopeChat)
-        expect(button).toBeTruthy()
+        const button = moduleButton(target)
+        expect(button.querySelector('svg')?.getAttribute('class')).toContain('globe')
+        expect(button.className).toContain('text-textcolor2')
         // moduleGlobeHold runs its tap action from the click event.
-        moduleButton(target, language.moduleScopeChat)!.click()
+        button.click()
         await settle()
         expect(DBState.db.characters[0].chats[0].modules).toContain(PERVENTIA_ID)
         expect(DBState.db.enabledModules).not.toContain(PERVENTIA_ID)
-        expect(moduleButton(target, language.moduleScopeChat)!.className).toContain('text-blue-500')
+        expect(moduleButton(target).className).toContain('text-blue-500')
+        expect(moduleButton(target).querySelector('svg')?.getAttribute('class')).toContain('message-square')
+        expect(moduleButton(target).getAttribute('aria-label')).toContain(language.moduleSideChatOn)
 
-        moduleButton(target, language.moduleScopeChat)!.click()
+        moduleButton(target).click()
         await settle()
         expect(DBState.db.characters[0].chats[0].modules).not.toContain(PERVENTIA_ID)
         expect(DBState.db.enabledModules).not.toContain(PERVENTIA_ID)
     })
 
-    it('shows a fixed globe for a globally enabled module in the side panel', async () => {
+    it('turns off a global module without adding it to the chat', async () => {
         useTogglesTestDb({ enabledModules: [PERVENTIA_ID] })
         const target = await mountSettings(true)
-        expect(moduleButton(target, language.moduleScopeChat)).toBeUndefined()
-        expect(target.querySelector(`[aria-label="${language.moduleScopeGlobal}"]`)).toBeTruthy()
+        expect(moduleButton(target).className).toContain('text-blue-500')
+        expect(moduleButton(target).querySelector('svg')?.getAttribute('class')).toContain('globe')
+        expect(moduleButton(target).getAttribute('aria-label')).toContain(language.moduleSideGlobalOn)
+        moduleButton(target).click()
+        await settle()
+        expect(DBState.db.enabledModules).not.toContain(PERVENTIA_ID)
+        expect(DBState.db.characters[0].chats[0].modules ?? []).not.toContain(PERVENTIA_ID)
+    })
+
+    it('unlinks a bot module without adding it to the chat', async () => {
+        useTogglesTestDb({ characterModules: [PERVENTIA_ID] })
+        const target = await mountSettings(true)
+        expect(moduleButton(target).className).toContain('text-amber-500')
+        expect(moduleButton(target).getAttribute('aria-label')).toContain(language.moduleSideBotOn)
+        moduleButton(target).click()
+        await settle()
+        expect(DBState.db.characters[0].modules).not.toContain(PERVENTIA_ID)
+        expect(DBState.db.characters[0].chats[0].modules ?? []).not.toContain(PERVENTIA_ID)
+    })
+
+    it('toggles all three scopes from the context menu', async () => {
+        useTogglesTestDb()
+        const target = await mountSettings(true)
+        await openScopeMenu(target)
+        menuItem(language.moduleSideChat).click()
+        await settle()
+        expect(DBState.db.characters[0].chats[0].modules).toContain(PERVENTIA_ID)
+        await openScopeMenu(target)
+        menuItem(language.moduleSideChat).click()
+        await settle()
+        expect(DBState.db.characters[0].chats[0].modules).not.toContain(PERVENTIA_ID)
+        await openScopeMenu(target)
+        menuItem(language.moduleSideGlobal).click()
+        await settle()
+        expect(DBState.db.enabledModules).toContain(PERVENTIA_ID)
+        await openScopeMenu(target)
+        menuItem(language.moduleSideGlobal).click()
+        await settle()
+        expect(DBState.db.enabledModules).not.toContain(PERVENTIA_ID)
+        await openScopeMenu(target)
+        menuItem(language.moduleSideBot.replace('{}', 'Test character')).click()
+        await settle()
+        expect(DBState.db.characters[0].modules).toContain(PERVENTIA_ID)
+        await openScopeMenu(target)
+        menuItem(language.moduleSideBot.replace('{}', 'Test character')).click()
+        await settle()
+        expect(DBState.db.characters[0].modules).not.toContain(PERVENTIA_ID)
     })
 
     it('disables chat activation when the selected bot has no open chat', async () => {
         useTogglesTestDb()
         DBState.db.characters[0].chats = []
         const target = await mountSettings(true)
-        const button = moduleButton(target, language.moduleScopeChat)
-        expect(button?.disabled).toBe(true)
-        expect(button?.getAttribute('aria-label')).toContain(language.moduleChatRequiresOpenChat)
-        button!.click()
+        const button = moduleButton(target)
+        expect(button.className).toContain('cursor-not-allowed')
+        expect(button.getAttribute('aria-label')).toContain(language.moduleChatRequiresOpenChat)
+        button.click()
         await settle()
         expect(DBState.db.enabledModules).not.toContain(PERVENTIA_ID)
     })
@@ -85,7 +144,8 @@ describe('ModuleSettings activation scope', () => {
     it('keeps the Settings page tap global', async () => {
         useTogglesTestDb()
         const target = await mountSettings(false)
-        const button = moduleButton(target, language.enableGlobal)
+        const button = [...target.querySelectorAll<HTMLButtonElement>('button.select-none')]
+            .find((button) => button.getAttribute('aria-label')?.includes(language.enableGlobal))
         expect(button).toBeTruthy()
         button!.click()
         await settle()

@@ -7,12 +7,15 @@
     import { DBState, ReloadGUIPointer, selectedCharID } from 'src/ts/stores.svelte';
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
+    import ShDropdownMenu from "src/lib/UI/GUI/ShDropdownMenu.svelte";
+    import ShDropdownMenuTrigger from "src/lib/UI/GUI/ShDropdownMenuTrigger.svelte";
+    import ShDropdownMenuContent from "src/lib/UI/GUI/ShDropdownMenuContent.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, refreshModules, rerenderChatForModules, syncFavoriteModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
     import { importModuleFiles, importModuleFromProtonDrive } from "src/ts/process/moduleImport";
     import { favoriteAfterMove, isModuleFavoritesFolder } from "src/ts/process/moduleFavoritesFolder";
-    import { Clock3Icon, SquarePen, Globe, MessageSquareIcon, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon, InfoIcon } from "@lucide/svelte";
+    import { Clock3Icon, SquarePen, Globe, MessageSquareIcon, CheckIcon, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon, InfoIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -65,6 +68,7 @@
     // FolderedList is unmounted while the module editor is open. Keep the
     // query here so returning to the catalog restores the same filtered view.
     let moduleSearchQuery = $state('')
+    let scopeMenus = $state<Record<string, boolean>>({})
     let moduleListScrollTop = 0
     let modulePageRoot: HTMLDivElement
     type ModuleCatalogSort = 'recent' | 'registered'
@@ -278,6 +282,22 @@
         }
         chat.modules = chat.modules
         $ReloadGUIPointer += 1
+    }
+
+    // MODULE-SIDEPANEL-SCOPE-MENU (2026-11-23): a tap removes the shown scope; hold/right-click chooses one.
+    function tapSideScope(rmodule: RisuModule) {
+        if (isGlobal(rmodule)) toggleGlobal(rmodule)
+        else if (isBotModule(rmodule)) toggleBotLink(rmodule)
+        else toggleChatScope(rmodule.id)
+    }
+
+    function sideScopeLabel(rmodule: RisuModule) {
+        const state = isGlobal(rmodule) ? language.moduleSideGlobalOn
+            : isBotModule(rmodule) ? language.moduleSideBotOn
+            : isInChat(rmodule) ? language.moduleSideChatOn
+            : isIntegrated(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? language.moduleSideAutomatic
+            : language.moduleSideOff
+        return `${state} · ${language.moduleSideChooseScope}${!currentChat() && !isGlobal(rmodule) && !isBotModule(rmodule) ? ` · ${language.moduleChatRequiresOpenChat}` : ''}`
     }
 
     function toggleFolderChat(indexes: number[]) {
@@ -679,14 +699,14 @@
                 const rmodule = displayModules[index]
                 return !!rmodule && !isGlobal(rmodule) && (isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule))
             }).length}
-            {@const folderGlobeLabel = sidePanel ? `${language.moduleScopeChat} (${activeCount}/${shownIndexes.length})${!currentChat() ? ` · ${language.moduleChatRequiresOpenChat}` : ''}` : `폴더 모듈 전체 활성화 (${activeCount}/${shownIndexes.length})${autoCount > 0 ? ` · 자동으로 켜짐 ${autoCount}개` : ''}`}
+            {@const folderGlobeLabel = sidePanel ? `${chatCount > 0 ? language.moduleSideChatOn : globalCount > 0 ? language.moduleSideGlobalOn : autoCount > 0 ? language.moduleSideAutomatic : language.moduleSideOff} (${activeCount}/${shownIndexes.length})${!currentChat() ? ` · ${language.moduleChatRequiresOpenChat}` : ''}` : `폴더 모듈 전체 활성화 (${activeCount}/${shownIndexes.length})${autoCount > 0 ? ` · 자동으로 켜짐 ${autoCount}개` : ''}`}
             <span class="no-sort shrink-0" use:tooltip={folderGlobeLabel}><button
-                class="no-sort shrink-0 rounded-sm p-1 {sidePanel && !currentChat() ? 'cursor-not-allowed' : 'cursor-pointer'} {sidePanel && chatCount > 0 ? 'text-blue-500 bg-blue-500/15' : globalCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : autoCount > 0 ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                class="no-sort shrink-0 rounded-sm p-1 {sidePanel && !currentChat() ? 'cursor-not-allowed' : 'cursor-pointer'} {sidePanel && chatCount > 0 ? 'text-blue-500 bg-blue-500/15' : globalCount > 0 ? sidePanel ? 'text-blue-500 bg-blue-500/15' : 'text-emerald-500 bg-emerald-500/15' : autoCount > 0 ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
                 title={folderGlobeLabel}
                 aria-label={folderGlobeLabel}
                 disabled={sidePanel && !currentChat()}
                 onclick={(event) => { event.stopPropagation(); if (sidePanel) toggleFolderChat(shownIndexes); else toggleFolderGlobal(shownIndexes) }}
-            >{#if sidePanel}<MessageSquareIcon size={17}/>{:else}<Globe size={17}/>{/if}</button></span>
+            >{#if sidePanel && chatCount > 0}<MessageSquareIcon size={17}/>{:else}<Globe size={17}/>{/if}</button></span>
         {/snippet}
         {#snippet folderCount(_folder, shownIndexes)}
             <!-- On / all, as the chat module menu shows it (the user's request, 2026-11-20: "N/47"); the same count as the globe. -->
@@ -708,7 +728,6 @@
             {@const rmodule = displayModules[index]}
             {@const source = moduleSource(rmodule)}
             {@const globeLabel = `${isGlobal(rmodule) ? language.enableGlobal : isBotModule(rmodule) ? language.moduleAutoForBot : isIllustrationOn(rmodule) ? language.moduleAutoForIllustration : isEditModeOn(rmodule) ? language.moduleAutoForEditMode : language.enableGlobal}${openBot ? ' · 꾹 누르면 지금 봇에 연결/해제' : ''}`}
-            {@const chatLabel = `${language.moduleScopeChat}${currentChat() ? '' : ` · ${language.moduleChatRequiresOpenChat}`}${openBot ? ' · 꾹 누르면 지금 봇에 연결/해제' : ''}`}
             {#if rmodule.mcp}
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
@@ -726,14 +745,29 @@
                     · 에셋 {moduleAssetCount(rmodule)}개{#if isColdModule(rmodule)} · {language.moduleColdBadge}{/if} · {rmodule.description || 'No description provided'}
                 </span>
             </div>
-            {#if sidePanel && isGlobal(rmodule)}
-                <span class="no-sort shrink-0 p-1 rounded-sm text-emerald-500 bg-emerald-500/15" title={language.moduleScopeGlobal} aria-label={language.moduleScopeGlobal}><Globe size={18}/></span>
-            {:else if sidePanel}
-                <span class="no-sort shrink-0" use:tooltip={chatLabel}>
-                    <button class="select-none [-webkit-touch-callout:none] p-1 rounded-sm {currentChat() ? 'cursor-pointer' : 'cursor-not-allowed'} {isInChat(rmodule) ? 'text-blue-500 bg-blue-500/15' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
-                        use:moduleGlobeHold={{ tap: () => toggleChatScope(rmodule.id), hold: () => toggleBotLink(rmodule), canHold: () => !!openBot }}
-                        disabled={!currentChat()} title={chatLabel} aria-label={chatLabel} aria-pressed={isInChat(rmodule)}><MessageSquareIcon size={18}/></button>
-                </span>
+            {#if sidePanel}
+                <ShDropdownMenu bind:open={() => scopeMenus[rmodule.id] ?? false, (value) => { scopeMenus[rmodule.id] = value }}>
+                    <ShDropdownMenuTrigger>
+                        {#snippet child({ props })}
+                            <span class="no-sort shrink-0" use:tooltip={sideScopeLabel(rmodule)}>
+                                <button {...props} class="no-sort select-none [-webkit-touch-callout:none] shrink-0 p-1 rounded-sm {currentChat() || isGlobal(rmodule) || isBotModule(rmodule) ? 'cursor-pointer' : 'cursor-not-allowed'} {isGlobal(rmodule) ? 'text-blue-500 bg-blue-500/15' : isBotModule(rmodule) ? 'text-amber-500 bg-amber-500/15' : isInChat(rmodule) ? 'text-blue-500 bg-blue-500/15' : isIntegrated(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                                    use:moduleGlobeHold={{ tap: () => tapSideScope(rmodule), hold: () => { scopeMenus[rmodule.id] = true }, canHold: () => true }}
+                                    onpointerdown={(event) => event.stopPropagation()}
+                                    onpointerup={(event) => event.stopPropagation()}
+                                    onclick={(event) => event.stopPropagation()}
+                                    oncontextmenu={(event) => { event.preventDefault(); event.stopPropagation(); scopeMenus[rmodule.id] = true }}
+                                    title={sideScopeLabel(rmodule)} aria-label={sideScopeLabel(rmodule)} aria-pressed={isGlobal(rmodule) || isBotModule(rmodule) || isInChat(rmodule)} data-scope-button>
+                                    {#if !isGlobal(rmodule) && !isBotModule(rmodule) && isInChat(rmodule)}<MessageSquareIcon size={18}/>{:else}<Globe size={18}/>{/if}
+                                </button>
+                            </span>
+                        {/snippet}
+                    </ShDropdownMenuTrigger>
+                    <ShDropdownMenuContent align="end" class="min-w-40">
+                        <ShDropdownMenuItem disabled={!currentChat()} onSelect={() => { scopeMenus[rmodule.id] = false; toggleChatScope(rmodule.id) }}><MessageSquareIcon /><span>{language.moduleSideChat}</span>{#if isInChat(rmodule)}<CheckIcon class="ml-auto" />{/if}</ShDropdownMenuItem>
+                        <ShDropdownMenuItem onSelect={() => { scopeMenus[rmodule.id] = false; toggleGlobal(rmodule) }}><Globe class="text-blue-500" /><span>{language.moduleSideGlobal}</span>{#if isGlobal(rmodule)}<CheckIcon class="ml-auto" />{/if}</ShDropdownMenuItem>
+                        {#if openBot}<ShDropdownMenuItem onSelect={() => { scopeMenus[rmodule.id] = false; toggleBotLink(rmodule) }}><Globe class="text-amber-500" /><span>{language.moduleSideBot.replace('{}', openBot.name || 'Unnamed')}</span>{#if isBotModule(rmodule)}<CheckIcon class="ml-auto" />{/if}</ShDropdownMenuItem>{/if}
+                    </ShDropdownMenuContent>
+                </ShDropdownMenu>
             {:else}
                 <!-- MODULE-BOT-LINK-MENU: globe hold links the open bot (user request, 2026-11-20). -->
                 <button class="no-sort select-none [-webkit-touch-callout:none] shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
