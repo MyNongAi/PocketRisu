@@ -8,6 +8,7 @@
 
 import { DBState, selIdState } from '../stores.svelte'
 import { language } from 'src/lang'
+import { drawErrorMessage } from './pictureDrawOptions'
 import { logCaptureRange, logImageFileName } from './logCapture'
 import { fitPngToBytes } from './logImageFit'
 import type { LogCaptureStage } from './logCaptureRender'
@@ -191,7 +192,7 @@ async function runTextLog(range: { from: number; to: number }, chat: ChatIdentit
         }
         console.error('[LogCapture]', error)
         logCapture.phase = 'error'
-        logCapture.error = (error as Error)?.message || String(error)
+        logCapture.error = drawErrorMessage(error, language.logCapture.pictureLoadFailed)
     }
 }
 
@@ -278,7 +279,7 @@ async function runCapture(range: { from: number; to: number }, chat: ChatIdentit
         }
         console.error('[LogCapture]', error)
         logCapture.phase = 'error'
-        logCapture.error = (error as Error)?.message || String(error)
+        logCapture.error = drawErrorMessage(error, language.logCapture.pictureLoadFailed)
     }
 }
 

@@ -16,6 +16,7 @@ import { createSimpleCharacter, DBState, selIdState } from '../stores.svelte'
 import { getFirstMessageAtIndex } from '../firstMessage'
 import { resolveAllInlayPlaceholders } from '../parser/parser.svelte'
 import { language } from 'src/lang'
+import { drawableNode, ignoreUndrawableImage } from './pictureDrawOptions'
 import {
     blockSliceInPart,
     clampLogImageScale,
@@ -383,6 +384,8 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
             if (cached) return cached
             const height = Math.min(tileHeight, block.height - offset)
             const canvas = await htmlToImage.toCanvas(block.el, {
+                filter: drawableNode,
+                onImageErrorHandler: ignoreUndrawableImage,
                 width: block.width,
                 height,
                 canvasWidth: block.width,

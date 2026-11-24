@@ -3620,6 +3620,7 @@ export const languageKorean = {
     noChat: "열려 있는 채팅이 없어요.",
     empty: "그 범위에는 담을 메시지가 없어요.",
     canvasFailed: "브라우저가 이미지를 그리지 못했어요.",
+    pictureLoadFailed: "그림 하나를 읽지 못해 이미지를 만들지 못했어요.",
     textMenuStart: "여기부터 텍스트 로그",
     textMenuEnd: "여기까지 텍스트 로그",
     textMenuSingle: "이 메시지만 텍스트 로그",

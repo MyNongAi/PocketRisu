@@ -2656,6 +2656,27 @@
       "regressionTests": ["src/ts/chatClipboard.test.ts"]
     },
     {
+      "id": "DRAW-SKIP-EMPTY-IMG",
+      "title": "그림으로 그릴 때 빈 그림 태그 건너뛰기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/pictureDrawOptions.ts",
+        "src/ts/gui/logCaptureRender.ts",
+        "src/ts/chatClipboard.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/gui/logCaptureState.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/pictureDrawOptions.ts", "contains": "DRAW-SKIP-EMPTY-IMG (2026-11-24)" },
+        { "file": "src/ts/gui/logCaptureRender.ts", "contains": "filter: drawableNode" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "filter: drawableNode" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/pictureDrawOptions.test.ts",
+        "src/ts/chatClipboard.test.ts"
+      ]
+    },
+    {
       "id": "CLIPBOARD-BOARD-SIZE",
       "title": "채팅 복사·로그 이미지 복사를 게시판(아카) 크기에 맞추기",
       "criticality": "core-ux",

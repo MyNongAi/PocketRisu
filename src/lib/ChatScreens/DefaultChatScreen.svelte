@@ -6,6 +6,7 @@
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, markNewSwipe, seeShownSwipe, shiftErrorMarkAfterDelete, shiftNewMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
+    import { drawableNode, ignoreUndrawableImage } from 'src/ts/gui/pictureDrawOptions';
     import { clearSendEcho, setSendEcho, type PendingSendEcho } from 'src/ts/gui/sendEcho';
     import { boundPersona } from 'src/ts/nameOnlyPersona';
     import { pressedInput, recordSentRequestInput, requestedInputVersion, type SentInput } from 'src/ts/inputVersions';
@@ -1657,7 +1658,7 @@ import { isMobile } from 'src/ts/platform'
             let canvases:HTMLCanvasElement[] = []
 
             for(const chat of chats){
-                const cnv = await html2canvas.toCanvas(chat as HTMLElement)
+                const cnv = await html2canvas.toCanvas(chat as HTMLElement, { filter: drawableNode, onImageErrorHandler: ignoreUndrawableImage })
                 alertWait("Taking screenShot... "+canvases.length+"/"+chats.length)
                 canvases.push(cnv)
             }

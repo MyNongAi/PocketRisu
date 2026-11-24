@@ -1,3 +1,5 @@
+import { drawableNode, ignoreUndrawableImage } from './gui/pictureDrawOptions'
+
 const PORTABLE_STYLE_PROPERTIES = [
     'display', 'visibility', 'box-sizing',
     'position', 'top', 'right', 'bottom', 'left', 'z-index',
@@ -74,6 +76,9 @@ export function writeChatClipboard(text: string | Promise<string>, html: Promise
 }
 
 export function chatClipboardErrorMessage(error: unknown): string {
+    if (!(error instanceof Error) && typeof Event !== 'undefined' && error instanceof Event) {
+        return '채팅을 복사하지 못했습니다: 그림 하나를 읽지 못했습니다.'
+    }
     const message = error instanceof Error ? error.message : String(error)
     if (/not focused|notallowed|denied|not allowed/i.test(message)
         || (error instanceof DOMException && error.name === 'NotAllowedError')) {
@@ -468,6 +473,8 @@ async function drawClipboardBlock(block: HTMLElement, width: number, height: num
     // in the chat; the bottom margin falls below the canvas.
     const pushed = /^(?:block|list-item)$/.test(getComputedStyle(block).display) ? marginThroughTop(block) : 0
     const canvas = await htmlToImage.toCanvas(block, {
+        filter: drawableNode,
+        onImageErrorHandler: ignoreUndrawableImage,
         width, height, canvasWidth: width, canvasHeight: height,
         pixelRatio: CLIPBOARD_IMAGE_DENSITY, skipAutoScale: true,
         style: pushed > 0 ? { margin: '0', marginTop: `${-pushed}px` } : { margin: '0' },

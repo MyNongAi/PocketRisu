@@ -442,6 +442,10 @@ describe('clipboard layout snapshot', () => {
 })
 
 describe('clipboard focus and promised HTML', () => {
+    it('explains image load events during drawing', () => {
+        expect(chatClipboardErrorMessage(new Event('error'))).toContain('그림 하나를 읽지 못했습니다')
+    })
+
     it('registers the write before asynchronous assets finish', async () => {
         vi.spyOn(document, 'hasFocus').mockReturnValue(true)
         let content!: Record<string, Blob | Promise<Blob>>

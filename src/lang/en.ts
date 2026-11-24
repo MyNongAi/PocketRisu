@@ -3369,6 +3369,7 @@ export const languageEnglish = {
         noChat: "No chat is open.",
         empty: "There are no messages to capture in that range.",
         canvasFailed: "The browser could not draw the image.",
+        pictureLoadFailed: "A picture in the log could not be read, so the image was not made.",
         textMenuStart: "Text log from here",
         textMenuEnd: "Text log up to here",
         textMenuSingle: "Text log of this message only",
