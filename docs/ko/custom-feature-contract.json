@@ -184,7 +184,9 @@
       "requiredMarkers": [
         { "file": "src/ts/parser/assetNameMatch.ts", "contains": "normalizedAssetKey" },
         { "file": "src/ts/parser/assetNameMatch.ts", "contains": "permitsFuzzyName" },
+        { "file": "src/ts/parser/assetNameMatch.ts", "contains": "RAW-ALTERNATIVE-NAMES" },
         { "file": "src/ts/parser/parser.svelte.ts", "contains": "normalizedAssetCache" },
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "collapseAlternativeAssetMacros(data" },
         { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "allPrefixes" },
         { "file": "server/node/assetManifestStore.cjs", "contains": "normalizedAssetKey" },
         { "file": "src/ts/parser/assetNameMatch.ts", "contains": "export function numberlessStem(" },

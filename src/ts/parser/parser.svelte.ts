@@ -4,7 +4,7 @@ import { appVer, getCurrentCharacter, getDatabase, type Chat, type Database, typ
 import { DBState, selIdState } from '../stores.svelte';
 import { aiWatermarkingLawApplies, getFileSrc, prefetchAssetManifests, resolvePrioritizedAssetManifestNames } from '../globalApi.svelte';
 import { hydrateAssetListsForCbs } from './assetListHydration';
-import { addAssetName, normalizedAssetKey, numberlessStem, permitsFuzzyName, trimAssetName, type AssetNameIndex } from './assetNameMatch';
+import { addAssetName, collapseAlternativeAssetMacros, normalizedAssetKey, numberlessStem, permitsFuzzyName, trimAssetName, type AssetNameIndex } from './assetNameMatch';
 import { isNodeServer } from "src/ts/platform"
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVar.svelte';
 import { processScriptFull } from '../process/scripts';
@@ -648,6 +648,9 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
     let needsSourceAccess = false
     let cx: number|null = null
 
+    if (!DBState.db.legacyMediaFindings) {
+        data = collapseAlternativeAssetMacros(data, (name) => !!assetPaths?.[name])
+    }
     data = await replaceAsync(data, assetRegex, async (full:string, type:string, name:string) => {
         name = name.toLocaleLowerCase()
 

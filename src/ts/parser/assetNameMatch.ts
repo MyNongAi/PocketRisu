@@ -38,6 +38,23 @@ export function normalizedAssetKey(name: string): string {
     return assetStem(name).replace(/[_ -.]/g, '')
 }
 
+// RAW-ALTERNATIVE-NAMES (2026-11-24): a NIKKE module writes a picture as
+// `{{raw::name.webp}}{{raw::name}}` ("this name, or else that one"): the
+// official app finds a module asset only by its exact name, so one macro
+// becomes the path and the other nothing. Our normalized lookup finds the
+// picture under both spellings, the path came out twice, and every picture
+// of the module was broken (the user's report). A run of back-to-back
+// raw/path macros that spell one asset now keeps one macro: the first exact
+// name, else the first spelling. Different assets side by side stay as written.
+export function collapseAlternativeAssetMacros(data: string, hasExact: (name: string) => boolean): string {
+    return data.replace(/(?:\{\{(?:raw|path)::[^{}]+\}\}){2,}/g, (run) => {
+        const macros = [...run.matchAll(/\{\{(?:raw|path)::([^{}]+)\}\}/g)]
+        const key = normalizedAssetKey(macros[0][1])
+        if (!macros.every((macro) => normalizedAssetKey(macro[1]) === key)) return run
+        return (macros.find((macro) => hasExact(macro[1].toLocaleLowerCase())) ?? macros[0])[0]
+    })
+}
+
 export function assetPrefix(name: string): string | null {
     const stem = assetStem(name)
     const separator = stem.search(/[._]/)

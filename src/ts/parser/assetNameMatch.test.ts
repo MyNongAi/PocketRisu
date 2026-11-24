@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addAssetName, assetPrefix, findAssetName, normalizedAssetKey, type AssetNameIndex } from './assetNameMatch'
+import { addAssetName, assetPrefix, collapseAlternativeAssetMacros, findAssetName, normalizedAssetKey, type AssetNameIndex } from './assetNameMatch'
 
 function distance(a: string, b: string): number {
     let previous = Array.from({ length: b.length + 1 }, (_, i) => i)
@@ -60,5 +60,54 @@ describe('asset names', () => {
         }
         expect(findAssetName('Baek.surprised.webp', exact, conflictIndex, fuzzyCandidates, 4, distance))
             .toBe('Baek.surprised.webp')
+    })
+})
+
+describe('collapseAlternativeAssetMacros', () => {
+    it('keeps the first exact alternative, or the first spelling when neither is exact', () => {
+        const data = '{{raw::a.webp}}{{raw::a}}'
+        expect(collapseAlternativeAssetMacros(data, (name) => name === 'a')).toBe('{{raw::a}}')
+        expect(collapseAlternativeAssetMacros(data, (name) => name === 'a.webp')).toBe('{{raw::a.webp}}')
+        expect(collapseAlternativeAssetMacros(data, () => false)).toBe('{{raw::a.webp}}')
+    })
+
+    it('keeps the surrounding attribute text', () => {
+        const data = '<img src="{{raw::Neon_x1.webp}}{{raw::Neon_x1}}" alt="">'
+        expect(collapseAlternativeAssetMacros(data, (name) => name === 'neon_x1')).toBe('<img src="{{raw::Neon_x1}}" alt="">')
+    })
+
+    it('keeps the chosen macro type in a mixed raw and path run', () => {
+        const data = '{{path::a}}{{raw::a.png}}'
+        expect(collapseAlternativeAssetMacros(data, (name) => name === 'a.png')).toBe('{{raw::a.png}}')
+        expect(collapseAlternativeAssetMacros(data, (name) => name === 'a')).toBe('{{path::a}}')
+    })
+
+    it('leaves different assets and separated macros unchanged', () => {
+        for (const data of [
+            '{{raw::a}}{{raw::b}}',
+            '{{raw::a.webp}} {{raw::a}}',
+            '{{raw::a.webp}}x{{raw::a}}',
+        ]) {
+            expect(collapseAlternativeAssetMacros(data, () => true)).toBe(data)
+        }
+    })
+
+    it('selects the first exact name in a run of three spellings', () => {
+        const data = '{{raw::a.webp}}{{raw::a.png}}{{raw::a}}'
+        expect(collapseAlternativeAssetMacros(data, (name) => name === 'a.png' || name === 'a')).toBe('{{raw::a.png}}')
+    })
+
+    it('leaves other macro types unchanged', () => {
+        const data = '{{img::a.webp}}{{img::a}}'
+        expect(collapseAlternativeAssetMacros(data, () => true)).toBe(data)
+    })
+
+    it('passes lower-cased names to the exact lookup', () => {
+        const names: string[] = []
+        expect(collapseAlternativeAssetMacros('{{raw::A.WEBP}}{{raw::A}}', (name) => {
+            names.push(name)
+            return name === 'a'
+        })).toBe('{{raw::A}}')
+        expect(names).toEqual(['a.webp', 'a'])
     })
 })
