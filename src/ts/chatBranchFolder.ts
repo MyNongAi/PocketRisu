@@ -1,7 +1,12 @@
 import type { ChatFolder } from './storage/database.svelte'
+import { boundPersona } from './nameOnlyPersona'
 
 type FolderOwner = { chatFolders?: ChatFolder[] }
-type FolderChat = { id?: string, name: string, folderId?: string }
+type FolderChat = { id?: string, name: string, folderId?: string, bindedPersona?: string }
+
+export function copyFolderPersonaName(db: Parameters<typeof boundPersona>[0] & { username?: string }, chat: { bindedPersona?: string }): string {
+    return boundPersona(db, chat.bindedPersona)?.name?.trim() || db.username?.trim() || 'User'
+}
 
 /**
  * Where a copy or branch of a chat goes when "분기 시 폴더 생성" is on.
@@ -25,6 +30,7 @@ export function folderForChatCopy(
     messages: number,
     createFolderOnBranch: boolean,
     makeId: () => string,
+    personaName: string,
 ): string | undefined {
     if (!createFolderOnBranch) return source.folderId
     const sourceFolder = source.folderId ? owner.chatFolders?.find(folder => folder.id === source.folderId) : undefined
@@ -42,9 +48,8 @@ export function folderForChatCopy(
         return pointFolder.id
     }
 
-    // A chat named by hand keeps its title, so its folders at other points would
-    // read alike: numbered as copies are ("… (2)").
-    const base = `Branches of ${source.name}`
+    // COPY-FOLDER-PERSONA-NAME (2026-11-25): "복사한 채팅 폴더만 / Branches of 망생 (7) 이런식" names only the new folder.
+    const base = `Branches of ${personaName} (${messages})`
     const taken = new Set((owner.chatFolders ?? []).map(folder => folder.name))
     let name = base
     for (let index = 2; taken.has(name); index++) name = `${base} (${index})`

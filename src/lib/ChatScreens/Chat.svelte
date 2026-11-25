@@ -1,7 +1,7 @@
 <script lang="ts">
     import { reissueMessageIds, retitleChatFromLastInput } from "src/ts/chatClone";
     import { clearReplyInProgress } from "src/ts/chatCopySnapshot";
-    import { folderForChatCopy } from "src/ts/chatBranchFolder";
+    import { copyFolderPersonaName, folderForChatCopy } from "src/ts/chatBranchFolder";
     import { chatTitleState } from "src/ts/chatTitleState";
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon, MoonIcon } from "@lucide/svelte"
     import { illustrateReply, illustratingReplies, removeIllustrations } from "src/ts/process/illustrationRun"
@@ -1598,7 +1598,7 @@
         const at = messageIndexAfterConfirm(currentChat, targetChat, targetMessage)
         if (at < 0) return
 
-        const folderId = folderForChatCopy(currentOwner, currentChat, at + 1, DBState.db.createFolderOnBranch, v4)
+        const folderId = folderForChatCopy(currentOwner, currentChat, at + 1, DBState.db.createFolderOnBranch, v4, copyFolderPersonaName(DBState.db, currentChat))
         
         const currentMessage = currentChat.message[at]
         // Branched while the chat streams: the branch itself is not being answered.

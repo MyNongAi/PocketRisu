@@ -2061,7 +2061,7 @@
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const input = chatForCopyWhileAnswering(snapshot, {" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "if (restored) restoreShownSwipeScriptstate(copy, restored)" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(hydratedIdx + 1, 0, newChat)" },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "newChat.folderId = folderForChatCopy(chara, chara.chats[hydratedIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "newChat.folderId = folderForChatCopy(chara, chara.chats[hydratedIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4, copyFolderPersonaName(DBState.db, chara.chats[hydratedIdx]))" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "if(owner !== chara) return" },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "export function folderForChatCopy(" },
         { "file": "src/ts/chatBranchFolder.test.ts", "contains": "describe('folderForChatCopy', () => {" },
@@ -2069,7 +2069,7 @@
         { "file": "src/ts/chatBranchFolder.ts", "contains": "nodeOnlyCopyPoint: { chatId: source.id ?? '', messages }," },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "COPY-FOLDER-TOGETHER (2026-11-23)" },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "if (sourceFolder && !sourceFolder.nodeOnlyCopyPoint) return sourceFolder.id" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const folderId = folderForChatCopy(currentOwner, currentChat, at + 1, DBState.db.createFolderOnBranch, v4)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const folderId = folderForChatCopy(currentOwner, currentChat, at + 1, DBState.db.createFolderOnBranch, v4, copyFolderPersonaName(DBState.db, currentChat))" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "newChat.folderId = folderId" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyCopyPoint?: { chatId: string, messages: number }" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const snapshot = clearReplyInProgress($state.snapshot(chat) as Chat)" },
@@ -2079,6 +2079,23 @@
       "regressionTests": [
         "src/ts/process/generationConcurrency.test.ts",
         "src/ts/chatCopySnapshot.test.ts",
+        "src/ts/chatBranchFolder.test.ts"
+      ]
+    },
+    {
+      "id": "COPY-FOLDER-PERSONA-NAME",
+      "title": "복사·가지 폴더 이름: 페르소나와 복사 지점",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatBranchFolder.ts",
+        "src/lib/SideBars/SideChatList.svelte",
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatBranchFolder.ts", "contains": "COPY-FOLDER-PERSONA-NAME (2026-11-25)" },
+        { "file": "src/ts/chatBranchFolder.ts", "contains": "Branches of ${personaName} (${messages})" }
+      ],
+      "regressionTests": [
         "src/ts/chatBranchFolder.test.ts"
       ]
     },
