@@ -1,16 +1,32 @@
 <script lang="ts">
-    import { onDestroy } from "svelte";
+    import { onDestroy, untrack } from "svelte";
     import { ParseMarkdown, risuChatParser } from "src/ts/parser/parser.svelte";
     import { type character } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { moduleBackgroundEmbedding, ReloadGUIPointer } from "src/ts/stores.svelte";
-    import { getPaneView } from "src/ts/chatPanes.svelte";
+    import { getPaneView, selectedChatIds } from "src/ts/chatPanes.svelte";
+    import { paneMayRedraw, PaneRedrawGate } from "src/ts/gui/paneRedraw";
     import { LatestBackground } from "src/ts/gui/backgroundRender";
     import { backgroundGate } from "src/ts/gui/backgroundGate.svelte";
 
     // The pane's bot (chatPanes.svelte.ts). The modules' background is worked
     // out for the selected chat only (moduleUpdate), so only its pane shows it.
     const view = getPaneView()
+    // SPLIT-PANE-ISOLATION (2026-11-25): global redraws cannot reparse the other chat's background.
+    const redrawGate = new PaneRedrawGate()
+    let effectiveReload = $state(0)
+    let previousReload = $ReloadGUIPointer
+    $effect(() => {
+        const incoming = $ReloadGUIPointer
+        const active = view.active
+        const chatId = view.chat?.id
+        const selectedId = untrack(() => selectedChatIds()?.chatId)
+        const allowed = paneMayRedraw(active, chatId, selectedId)
+        if (incoming !== previousReload) {
+            previousReload = incoming
+            if (redrawGate.signal(allowed)) effectiveReload = redrawGate.revision
+        } else if (redrawGate.catchUp(allowed)) effectiveReload = redrawGate.revision
+    })
     let backgroundHTML = $derived(view.character?.backgroundHTML)
     let currentChar:character = $derived(view.character)
     let moduleBackground = $derived(view.active ? $moduleBackgroundEmbedding : '')
@@ -28,7 +44,7 @@
     let styled = false
     const background = new LatestBackground((html) => { shown = html }, (waiting) => { gate.waiting = waiting && styled })
     $effect(() => {
-        $ReloadGUIPointer
+        effectiveReload
         if (!(backgroundHTML || moduleBackground) || view.characterIndex < 0) {
             background.clear()
             return
@@ -37,7 +53,9 @@
         const char = currentChar
         const chat = view.active ? undefined : view.chat
         styled = /<style/i.test(source)
-        background.render(char?.chaId, () => ParseMarkdown(risuChatParser(source, {chara:char, chat}), char, 'back'))
+        // An inactive background's app-wide parser reads are a snapshot until its own redraw.
+        const parse = () => ParseMarkdown(risuChatParser(source, {chara:char, chat}), char, 'back')
+        background.render(char?.chaId, () => view.active ? parse() : untrack(parse))
     })
     onDestroy(() => background.stop())
 

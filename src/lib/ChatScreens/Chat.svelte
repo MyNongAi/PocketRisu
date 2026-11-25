@@ -19,7 +19,7 @@
     import { DBState, ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
 
     import { capitalize, getUserIcon, getUserName, sleep } from "src/ts/util"
-    import { onDestroy, onMount, tick, untrack } from "svelte"
+    import { getContext, onDestroy, onMount, tick, untrack } from "svelte"
     import { get, type Unsubscriber } from "svelte/store"
     import { v4 as uuidv4, v4 } from 'uuid'
     import { language } from "../../lang"
@@ -31,7 +31,9 @@
     import { recordMessageDeletion } from "src/ts/gui/messageUndo"
     import { undoMessageDeletion } from "src/ts/gui/messageUndoRun"
     import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
-    import { getPaneView } from "src/ts/chatPanes.svelte"
+    import { getPaneView, selectedChatIds } from "src/ts/chatPanes.svelte"
+    import { paneMayRedraw, PaneRedrawGate } from "src/ts/gui/paneRedraw"
+    import { scrollWithinContainer } from './scrollWithin'
     import { backgroundGate } from "src/ts/gui/backgroundGate.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import { isSendKey } from "src/ts/gui/sendKey"
@@ -160,6 +162,19 @@
     // The pane this message is drawn in (chatPanes.svelte.ts): its chat, which
     // in a split is not always the selected one.
     const view = getPaneView()
+    // SPLIT-PANE-ISOLATION (2026-11-25): each message has its own effective redraw revision.
+    const redrawGate = new PaneRedrawGate()
+    let gatedReloadPointer = $state(0)
+    const preserveReader = getContext<(() => void) | undefined>('pane-redraw-anchor')
+    const redrawAllowed = () => untrack(() => paneMayRedraw(view.active, view.chat?.id, selectedChatIds()?.chatId))
+    function signalRedraw() {
+        if (!redrawGate.signal(redrawAllowed())) return
+        // Only a pane the user is not in keeps its reader in place; the active pane
+        // (and a single screen) redraws as before, so a streamed reply still follows the tail.
+        if (!untrack(() => view.active)) preserveReader?.()
+        gatedReloadPointer = redrawGate.revision
+        updateDisplayedMessage()
+    }
     let editScope = $derived(messageEditScope({ chaId: view.character?.chaId ?? '', chatId: view.chat?.id, chatIndex: view.chatIndex }))
     // Hidden while the bot just entered still parses its background <style>
     // (backgroundGate.svelte.ts); a log image is drawn as it is.
@@ -503,7 +518,7 @@
             // closed the edit at once: the original message above opens its
             // own edit instead (the user's report, 2026-10-26).
             if (replyInProgress) {
-                const key = previousInputKey
+                const key = { key: previousInputKey, pane: view.pane, chatId: view.chat?.id ?? '' }
                 inputEditRequest.set(key)
                 setTimeout(() => inputEditRequest.update((current) => current === key ? null : current), 1000)
                 return
@@ -576,12 +591,19 @@
 
     // The copy under a reply being written hands its edit to this message.
     $effect(() => {
-        const key = $inputEditRequest
-        if (!key || role !== 'user' || key !== messageKey) return
+        const request = $inputEditRequest
+        if (!request || role !== 'user' || request.key !== messageKey || request.pane !== view.pane || request.chatId !== view.chat?.id) return
         untrack(() => {
             inputEditRequest.set(null)
             if (!editMode) startOriginalEdit()
-            void tick().then(() => chatRoot?.scrollIntoView({ block: 'nearest' }))
+            void tick().then(() => {
+                const scroller = chatRoot?.closest('.flex-col-reverse')?.parentElement as HTMLElement | null
+                if (!chatRoot || !scroller) return
+                const target = chatRoot.getBoundingClientRect()
+                const viewport = scroller.getBoundingClientRect()
+                if (target.top < viewport.top) scrollWithinContainer(chatRoot, scroller, { block: 'start', behavior: 'instant' })
+                else if (target.bottom > viewport.bottom) scrollWithinContainer(chatRoot, scroller, { block: 'end', behavior: 'instant' })
+            })
         })
     })
 
@@ -758,7 +780,11 @@
         if(renderRawStreaming){
             return
         }
-        displaya(displayMessage)
+        const shown = displayMessage
+        // The inactive pane parses with its chat scope; app-wide toggle and preset reads
+        // must not subscribe this effect to the active pane's selection changes.
+        if (untrack(() => view.active)) displaya(shown)
+        else untrack(() => displaya(shown))
     }
 
     $effect.pre(() => {
@@ -768,8 +794,10 @@
     const unsubscribers:Unsubscriber[] = []
 
     onMount(()=>{
-        unsubscribers.push(ReloadGUIPointer.subscribe((v) => {
-            updateDisplayedMessage()
+        let firstGui = true
+        unsubscribers.push(ReloadGUIPointer.subscribe(() => {
+            if (firstGui) { firstGui = false; return }
+            signalRedraw()
         }))
         // This message's reload (an HTML button's trigger, reloadChat,
         // v2UpdateChatAt) re-renders it in place instead of rebuilding it
@@ -780,8 +808,18 @@
             const mark = pointers[idx] ?? 0
             if (mark === reloadMark) return
             reloadMark = mark
-            updateDisplayedMessage()
+            signalRedraw()
         }))
+    })
+
+    $effect(() => {
+        void view.active
+        void view.chat?.id
+        if (redrawGate.catchUp(redrawAllowed())) {
+            preserveReader?.()
+            gatedReloadPointer = redrawGate.revision
+            updateDisplayedMessage()
+        }
     })
 
     onDestroy(()=>{
@@ -1042,7 +1080,7 @@
             {language.noMessage}
         </div>
     {:else}
-        {@const chatReloadPointer = $ReloadGUIPointer + ($ReloadChatPointer[idx] ?? 0)}
+        {@const chatReloadPointer = gatedReloadPointer}
         {@const totalLengthPointer = (idx > totalLength - 6) ? totalLength : 0}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->

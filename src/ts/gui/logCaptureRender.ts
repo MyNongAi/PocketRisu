@@ -10,6 +10,7 @@
 import { mount, unmount } from 'svelte'
 import type { Message } from '../storage/database.svelte'
 import Chat from 'src/lib/ChatScreens/Chat.svelte'
+import { queryInActivePane } from './paneQuery'
 import { getCharImage } from '../characters'
 import { boundPersona } from '../nameOnlyPersona'
 import { createSimpleCharacter, DBState, selIdState } from '../stores.svelte'
@@ -221,7 +222,8 @@ export async function mountLogRange(options: RenderLogOptions, header: boolean):
     const layoutWidth = Math.round(clampLogImageWidth(db.nodeOnlyLogImageWidth) / scale)
     const persona = personaFor(chat.bindedPersona)
     const simpleChar = createSimpleCharacter(character)
-    const liveScreen = document.querySelector('.default-chat-screen')
+    // SPLIT-PANE-ISOLATION (2026-11-25): inherit the active pane's screen style.
+    const liveScreen = queryInActivePane('.default-chat-screen')
     const background = chatBackgroundColor(liveScreen)
 
     ensureCaptureStyle()

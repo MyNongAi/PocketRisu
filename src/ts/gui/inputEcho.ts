@@ -2,6 +2,7 @@
 // answers. Editing either the copy or the original shows every keystroke in
 // both places; the text is written to the chat once, when the edit closes.
 import { writable } from 'svelte/store'
+import type { PaneId } from '../chatPanes.svelte'
 import { isTypedInput } from '../typedInput'
 
 export type InputEchoDraft = {
@@ -26,7 +27,8 @@ export const inputEchoDraft = writable<InputEchoDraft | null>(null)
  * that reply is redrawn while it streams and the redraw closed the edit (the
  * user's report, 2026-10-26).
  */
-export const inputEditRequest = writable<string | null>(null)
+// SPLIT-PANE-ISOLATION (2026-11-25): an echo edit belongs to one copy of one chat.
+export const inputEditRequest = writable<{ key: string, pane: PaneId, chatId: string } | null>(null)
 
 type EchoMessage = { role?: string, isComment?: boolean, chatId?: string }
 

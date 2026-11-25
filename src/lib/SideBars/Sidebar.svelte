@@ -120,6 +120,8 @@
     import { scrollWithinContainer } from "../ChatScreens/scrollWithin";
 
   let sideBarMode = $state(0);
+  // SPLIT-PANE-ISOLATION (2026-11-25): character lookup stays in this sidebar.
+  let railRoot: HTMLDivElement | undefined = $state()
   let hasEditableCharacter = $derived.by(() =>
     view.characterIndex >= 0
       && view.character?.chaId !== '§playground'
@@ -853,7 +855,7 @@
       sidebarScrollRequest += 1
     }
     setTimeout(() => {
-      const activeElement = document.querySelector(`[data-char-id="${characterId}"]`) as HTMLElement | null
+      const activeElement = railRoot?.querySelector(`[data-char-id="${CSS.escape(characterId)}"]`) as HTMLElement | null
       const list = activeElement?.closest('.character-list') as HTMLElement | null
       // Scroll the list only — scrollIntoView also scrolls an inflated root.
       // Like block 'nearest': move only when the card is outside the list.
@@ -1753,6 +1755,7 @@
 {#if part !== 'panel'}
 {#if DBState.db.menuSideBar}
 <div
+  bind:this={railRoot}
   onpointerdowncapture={takePaneSelection}
   onfocusincapture={takePaneSelection}
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
@@ -1825,6 +1828,7 @@
 <!-- A pane's overlay (narrow split) lies outside its chat screen: touching
      its bot list hands that pane the selection, so a bot opens there. -->
 <div
+  bind:this={railRoot}
   onpointerdowncapture={takePaneSelection}
   onfocusincapture={takePaneSelection}
   class="h-full flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"

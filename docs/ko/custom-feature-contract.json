@@ -535,6 +535,29 @@
       ]
     },
     {
+      "id": "SPLIT-PANE-ISOLATION",
+      "title": "분할 화면: 한쪽 조작이 다른 쪽 스크롤·다시 그리기에 영향 없음",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/paneRedraw.ts",
+        "src/ts/gui/paneRedraw.test.ts",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/ChatScreens/Chats.svelte",
+        "src/lib/ChatScreens/BackgroundDom.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/ts/gui/inputEcho.ts",
+        "src/ts/gui/logCaptureRender.ts",
+        "src/ts/stores.svelte.ts",
+        "docs/ko/custom-feature-contract.json",
+        "docs/ko/custom-feature-ledger.md"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/paneRedraw.ts", "contains": "SPLIT-PANE-ISOLATION (2026-11-25)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "SPLIT-PANE-ISOLATION (2026-11-25)" }
+      ],
+      "regressionTests": ["src/ts/gui/paneRedraw.test.ts"]
+    },    {
       "id": "RAIL-BOTLIST-TOGGLE",
       "title": "봇 목록 고정 추가 버튼과 칸별 접기",
       "criticality": "core-ux",

@@ -17,7 +17,7 @@
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
     import ShDropdownMenuItem from 'src/lib/UI/GUI/ShDropdownMenuItem.svelte';
-    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatHydrationOverlayStore, chatPanelStore, holdChatEditorOverlay } from "../../ts/stores.svelte";
+    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, requestPaneScroll, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatHydrationOverlayStore, chatPanelStore, holdChatEditorOverlay } from "../../ts/stores.svelte";
     import { onMount, tick, untrack } from 'svelte';
     import { SvelteSet } from 'svelte/reactivity';
     import { get } from 'svelte/store';
@@ -81,6 +81,7 @@ import { isMobile } from 'src/ts/platform'
 
     import { isSendKey } from 'src/ts/gui/sendKey';
     import { getPaneView } from 'src/ts/chatPanes.svelte';
+    import { matchesScrollRequest, type PaneScrollRequest } from 'src/ts/gui/paneRedraw';
     import { keepLabelInPane, newPaneFormId } from 'src/ts/gui/paneFormScope';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
@@ -594,15 +595,22 @@ import { isMobile } from 'src/ts/platform'
             }
         }
     }
+    // SPLIT-PANE-ISOLATION (2026-11-25): every async step checks its pane, chat and serial.
     $effect(() => {
-        if(view.active && ScrollToMessageStore.value !== -1){
-            const index = ScrollToMessageStore.value
+        if (view.active && ScrollToMessageStore.value !== -1 && view.chat?.id) {
+            requestPaneScroll(view.pane, view.chat.id, ScrollToMessageStore.value)
             ScrollToMessageStore.value = -1
-            scrollToMessage(index)
         }
+        const request = ScrollToMessageStore.request
+        if (!request || !matchesScrollRequest(request, view.pane, view.chat?.id, ScrollToMessageStore.serial)) return
+        ScrollToMessageStore.request = null
+        void scrollToMessage(request)
     })
 
-    async function scrollToMessage(index: number){
+    async function scrollToMessage(request: PaneScrollRequest){
+        const { index } = request
+        const stillCurrent = () => matchesScrollRequest(request, view.pane, view.chat?.id, ScrollToMessageStore.serial)
+        if (!stillCurrent()) return
         // Forces the loading of past messages not rendered on the screen
         isScrollingToMessage = true
         chatsInstance?.releaseViewport?.()
@@ -613,6 +621,7 @@ import { isMobile } from 'src/ts/platform'
             if(loadPages < neededLoadPages){
                 loadPages = neededLoadPages
                 await tick()
+                if (!stillCurrent()) return
             }
 
             let element: Element | null = null;
@@ -621,6 +630,7 @@ import { isMobile } from 'src/ts/platform'
                 element = screenRoot?.querySelector(`[data-chat-index="${index}"]`) ?? null
                 if(element) break;
                 await sleep(100)
+                if (!stillCurrent()) return
             }
 
             const chatContainer = (screenRoot ?? null) as HTMLElement | null;
@@ -634,6 +644,7 @@ import { isMobile } from 'src/ts/platform'
                 scrollWithinContainer(element as HTMLElement, chatContainer, { block: 'start', behavior: 'instant' })
             }
             await sleep(50)
+            if (!stillCurrent()) return
 
             if(element){
                 // Wait for images to load to prevent layout shift
@@ -651,12 +662,14 @@ import { isMobile } from 'src/ts/platform'
                         Promise.all(promises),
                         sleep(4000)
                     ]);
+                    if (!stillCurrent()) return
                 }
 
                 if(chatContainer){
                     scrollWithinContainer(element as HTMLElement, chatContainer, { block: 'start', behavior: 'instant' })
                     // Small delay and scroll again to ensure position is correct after any final layout adjustments
                     await sleep(50)
+                    if (!stillCurrent()) return
                     scrollWithinContainer(element as HTMLElement, chatContainer, { block: 'start', behavior: 'instant' })
                 }
 
@@ -666,7 +679,7 @@ import { isMobile } from 'src/ts/platform'
                 }, 2000)
             }
         } finally {
-            isScrollingToMessage = false
+            if (ScrollToMessageStore.serial === request.serial) isScrollingToMessage = false
         }
     }
 

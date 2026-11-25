@@ -113,7 +113,15 @@ export const InlayGallerySubmenuIndex = writable(0)
 export const ModelPresetListTabIndex = writable(0)
 export const ReloadGUIPointer = writable(0)
 export const ReloadChatPointer = writable({} as Record<number, number>)
-export const ScrollToMessageStore = $state({ value: -1 })
+// SPLIT-PANE-ISOLATION (2026-11-25): value remains the legacy active-pane setter.
+export const ScrollToMessageStore = $state({
+    value: -1,
+    request: null as import('./gui/paneRedraw').PaneScrollRequest | null,
+    serial: 0,
+})
+export function requestPaneScroll(pane: import('./chatPanes.svelte').PaneId, chatId: string, index: number): void {
+    ScrollToMessageStore.request = { pane, chatId, index, serial: ++ScrollToMessageStore.serial }
+}
 export const OpenRealmStore = writable(false)
 export const RealmInitialOpenChar = writable<null | hubType>(null)
 export const PlaygroundStore = writable(0)

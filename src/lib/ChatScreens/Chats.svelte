@@ -2,15 +2,16 @@
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
     import { hasBrowsableSwipes, hasUnseenSwipe, unseenSwipeIsShort } from 'src/ts/chatSwipes';
     import { echoedInputIndex, inputEchoKey } from 'src/ts/gui/inputEcho';
-    import { getAllContexts, mount, onDestroy, tick, unmount } from 'svelte';
+    import { getAllContexts, mount, onDestroy, setContext, tick, unmount } from 'svelte';
     import { getPaneView } from 'src/ts/chatPanes.svelte';
     import { get } from 'svelte/store';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
-    import { createSimpleCharacter, DBState, ReloadChatPointer } from 'src/ts/stores.svelte';
+    import { createSimpleCharacter, DBState } from 'src/ts/stores.svelte';
     import { chatFoldedState, chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { foldStartFor } from 'src/ts/chatFold.svelte';
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
+    import { roomChanged } from 'src/ts/gui/paneRedraw';
     import { isAtTail, lineKey, matchingLineIndex, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
     import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, type RerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
@@ -21,7 +22,6 @@
     // The pane this list draws (chatPanes.svelte.ts). Messages are mounted
     // by hand below; they get this component's context so they know it too.
     const view = getPaneView();
-    const chatContexts = getAllContexts();
     const getCurrentChatRoomId = () => view.chat?.id ?? null;
 
     let {
@@ -771,6 +771,18 @@
         roomId: string | null
     }
     let viewportRestoreRevision = 0
+    // SPLIT-PANE-ISOLATION (2026-11-25): coalesce redraws of this pane's messages
+    // around one reader anchor. Chat instances inherit this context when mounted.
+    let redrawAnchorPending = false
+    setContext('pane-redraw-anchor', () => {
+        if (redrawAnchorPending) return
+        redrawAnchorPending = true
+        const anchor = captureViewportAnchor()
+        const revision = ++viewportRestoreRevision
+        if (anchor) void restoreViewportAnchor(anchor, revision)
+        void tick().then(() => { redrawAnchorPending = false })
+    })
+    const chatContexts = getAllContexts()
 
     /** First visible message, to keep in place while older pages mount above. */
     function captureViewportAnchor(): ViewportAnchor | null {
@@ -932,10 +944,10 @@
     })
 
     $effect(() => {
-        void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
+        // Message bodies gate redraw pointers themselves; list updates track actual chat data.
         void $rerollPlaceholders; // and the old reply shown while it is rerolled
         const currentChatRoomId = getCurrentChatRoomId();
-        const isSameChat = currentChatRoomId === previousChatRoomId;
+        const isSameChat = !roomChanged(previousChatRoomId, currentChatRoomId);
         const added = isSameChat && messages.length > previousLength;
         const olderPagesMounted = isSameChat && loadPages > previousLoadPages;
         const wasAtTail = checkIfAtBottom();
@@ -968,9 +980,11 @@
                 hasNewUnreadMessage = true;
             }
         }
-        previousLength = messages.length;
-        previousLoadPages = loadPages;
-        previousChatRoomId = currentChatRoomId;
+        if (currentChatRoomId !== null) {
+            previousLength = messages.length;
+            previousLoadPages = loadPages;
+            previousChatRoomId = currentChatRoomId;
+        }
     })
 
 </script>
