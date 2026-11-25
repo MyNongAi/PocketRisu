@@ -2668,6 +2668,8 @@ export interface ChatFolder{
     folded:boolean
     /** PocketRisu: the chat a folder's copies were made from and how many messages they share with it (chatBranchFolder.ts). Missing on folders the user made or made before 2026-11-22. */
     nodeOnlyCopyPoint?: { chatId: string, messages: number }
+    /** Display nesting only. Other Risu versions ignore this and show every folder flat, each with its own chats. */
+    nodeOnlyParentFolderId?: string
 }
 
 export interface Message{

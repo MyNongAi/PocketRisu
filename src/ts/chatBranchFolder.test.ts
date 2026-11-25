@@ -94,7 +94,7 @@ describe('folderForChatCopy', () => {
         // The copied chat and its copy share the folder; the copies at 5 stay at 5.
         expect(source.folderId).toBe('point-6')
         expect(owner.chatFolders).toEqual([
-            { id: 'point-6', name: 'Branches of User (6)', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 6 } },
+            { id: 'point-6', name: 'Branches of User (6)', folded: false, nodeOnlyCopyPoint: { chatId: 'original', messages: 6 }, nodeOnlyParentFolderId: 'point-5' },
             point5,
         ])
         expect(folderForChatCopy(owner, source, 6, true, makeId, 'User')).toBe('point-6')
@@ -117,6 +117,8 @@ describe('folderForChatCopy', () => {
             'Branches of 망생 (5)',
             'Branches of 망생 (6)',
         ])
+        expect(owner.chatFolders[0].nodeOnlyParentFolderId).toBe('point-6')
+        expect(owner.chatFolders[1].nodeOnlyParentFolderId).toBe('point-5')
     })
 
     it('gives a grown copy its own next point folder and moves it in', () => {
@@ -129,6 +131,7 @@ describe('folderForChatCopy', () => {
         expect(folderForChatCopy(owner, copy, 6, true, () => 'copy-6', 'User')).toBe('copy-6')
         expect(copy.folderId).toBe('copy-6')
         expect(owner.chatFolders[0].nodeOnlyCopyPoint).toEqual({ chatId: 'copy', messages: 6 })
+        expect(owner.chatFolders[0].nodeOnlyParentFolderId).toBe('point-5')
         expect(owner.chatFolders).toHaveLength(3)
     })
 

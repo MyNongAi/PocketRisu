@@ -5,6 +5,16 @@ const folder = (id?: string): EditableChatFolder => ({ id })
 const chat = (folderId?: string | null): EditableChat => ({ folderId })
 
 describe('CHAT-FOLDER-DELETE-BY-ID folder removal', () => {
+    it('moves child folders to the removed folder parent and releases only its own chats', () => {
+        const folders = [folder('root'), { id: 'middle', nodeOnlyParentFolderId: 'root' },
+            { id: 'child', nodeOnlyParentFolderId: 'middle' }]
+        const chats = [chat('middle'), chat('child')]
+        expect(removeChatFolder(folders, chats, folders[1])).toBe(true)
+        expect(folders[1].nodeOnlyParentFolderId).toBe('root')
+        expect(chats.map(c => c.folderId)).toEqual([null, 'child'])
+        expect(removeChatFolder(folders, chats, folders[0])).toBe(true)
+        expect(folders[0].nodeOnlyParentFolderId).toBeUndefined()
+    })
     it('releases only the middle folder chats', () => {
         const first = folder('first'), middle = folder('middle'), next = folder('next')
         const folders = [first, middle, next]

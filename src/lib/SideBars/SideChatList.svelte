@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount, tick, untrack } from "svelte";
     import { v4 } from "uuid";
-    import { orderChatList } from "src/ts/chatListOrder";
+    import { orderChatList, type ChatListItem } from "src/ts/chatListOrder";
     import { removeChatFolder } from "src/ts/chatFolderEdit";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, NotebookPenIcon, SearchIcon, XIcon } from "@lucide/svelte";
@@ -181,8 +181,11 @@
 
     // CHAT-LIST-RECENT (2026-11-22): streaming text is absent from the order key.
     const recentMode = $derived(DBState.db.nodeOnlyChatListRecent !== false)
-    const orderInput = $derived(JSON.stringify({ bot: chara.chaId, chats: chara.chats.map(chat => [chat.id, chat.folderId, chat.lastDate]), folders: (chara.chatFolders ?? []).map(folder => folder.id) }))
+    const orderInput = $derived(JSON.stringify({ bot: chara.chaId, chats: chara.chats.map(chat => [chat.id, chat.folderId, chat.lastDate]), folders: (chara.chatFolders ?? []).map(folder => [folder.id, folder.nodeOnlyParentFolderId]) }))
     const recentOrder = $derived.by(() => { orderInput; return untrack(() => orderChatList(chara.chats, chara.chatFolders ?? [])) })
+    const folderItemsFor = (index: number): ChatListItem[] => recentMode ? recentOrder.folderItems[index]
+        : [...recentOrder.folderItems[index].filter(item => item.kind === 'folder').sort((a, b) => a.index - b.index),
+            ...chara.chats.flatMap((chat, i): ChatListItem[] => chat.folderId === chara.chatFolders[index].id ? [{ kind: 'chat', index: i }] : [])]
     let chatsStb: Sortable[] = []
     let folderStb: Sortable = null
 
@@ -190,6 +193,40 @@
     let listEle: HTMLDivElement = $state()
     let sorted = $state(0)
     let opened = 0
+    // CHAT-LIST-RESIZE (2026-11-25): save a device-local list maximum.
+    const heightKey = 'pocketrisu:chat-list-max-height'
+    const clampHeight = (height: number) => Math.max(160, Math.min(height, Math.max(160, window.innerHeight - 120)))
+    let listHeight = $state(320)
+    let resizeStart: { pointerId: number; y: number; height: number; moved: boolean } | null = null
+    let lastGripTap = 0
+    function saveListHeight(height: number) {
+        listHeight = clampHeight(height)
+        try { localStorage.setItem(heightKey, String(listHeight)) } catch {}
+    }
+    function gripDown(event: PointerEvent) {
+        event.stopPropagation()
+        event.preventDefault()
+        const now = Date.now()
+        if (now - lastGripTap < 350) {
+            lastGripTap = 0
+            saveListHeight(320)
+            return
+        }
+        resizeStart = { pointerId: event.pointerId, y: event.clientY, height: listHeight, moved: false }
+        event.currentTarget instanceof HTMLElement && event.currentTarget.setPointerCapture(event.pointerId)
+    }
+    function gripMove(event: PointerEvent) {
+        if (!resizeStart || resizeStart.pointerId !== event.pointerId) return
+        const delta = event.clientY - resizeStart.y
+        if (Math.abs(delta) > 3) resizeStart.moved = true
+        listHeight = clampHeight(resizeStart.height + delta)
+    }
+    function gripUp(event: PointerEvent) {
+        if (!resizeStart || resizeStart.pointerId !== event.pointerId) return
+        if (!resizeStart.moved) lastGripTap = Date.now()
+        else { lastGripTap = 0; saveListHeight(listHeight) }
+        resizeStart = null
+    }
 
     function beginChatRoomDrag(event: DragEvent, chat: Chat) {
         if (editMode || !event.dataTransfer || !chara.chaId || !chat.id) {
@@ -233,6 +270,7 @@
         for (let chat of listEle.querySelectorAll('.risu-chat')) {
             chatsStb.push(new Sortable(chat, {
                 group: 'chats',
+                draggable: '>[data-risu-chat-idx]',
                 onEnd: async (event) => {
                     const currentChatPage = chara.chatPage
                     const newChats: Chat[] = []
@@ -243,6 +281,7 @@
                     listEle.querySelectorAll('[data-risu-chat-folder-idx]').forEach(folder => {
                         const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
                         folder.querySelectorAll('[data-risu-chat-idx]').forEach(chatInFolder => {
+                            if (chatInFolder.closest('[data-risu-chat-folder-idx]') !== folder) return
                             const chatIdx = parseInt(chatInFolder.getAttribute('data-risu-chat-idx'))
                             const newChat = chara.chats[chatIdx]
                             newChat.folderId = chara.chatFolders[folderIdx].id
@@ -287,6 +326,7 @@
                     newFolders.push(chara.chatFolders[folderIdx])
 
                     folder.querySelectorAll('[data-risu-chat-idx]').forEach(chatEle => {
+                        if (chatEle.closest('[data-risu-chat-folder-idx]') !== folder) return
                         const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
                         newChats.push(chara.chats[idx])
                     })
@@ -299,7 +339,7 @@
                     }
                 })
                 
-                chara.chatFolders = newFolders
+                chara.chatFolders = [...newFolders, ...chara.chatFolders.filter(folder => !newFolders.includes(folder))]
                 changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
                 chara.chats = newChats
                 try {
@@ -309,6 +349,7 @@
                 await sleep(1)
                 createStb()
             },
+            draggable: '>[data-risu-chat-folder-idx]',
             ...sortableOptions
         })
     }
@@ -325,6 +366,11 @@
         void tick().then(() => { if (listEle) recreateStb() })
     })
     onMount(() => {
+        listHeight = clampHeight(320)
+        try {
+            const stored = Number(localStorage.getItem(heightKey))
+            if (Number.isFinite(stored) && stored > 0) listHeight = clampHeight(stored)
+        } catch {}
         if (searchQuery) scheduleSearch()
     })
 
@@ -359,9 +405,9 @@
         $ReloadGUIPointer += 1
     }}>{language.newChat}</ShButton>
 
-    {#snippet folderRow(folder: ChatFolder, i: number, memberChats: Chat[])}
+    {#snippet folderRow(folder: ChatFolder, i: number)}
             <div data-risu-chat-folder-idx={i}
-                class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
+                class="flex flex-col min-w-0 mb-2 border border-darkborderc bg-selected/30 cursor-pointer rounded-md">
                 <!-- folder header -->
                 <button
                     onclick={() => {
@@ -430,14 +476,18 @@
                         </div>
                     </div>
                 </button>
-                <!-- chats in folder -->
+                <!-- CHAT-FOLDER-NESTING (2026-11-25): each point folder displays its child folders and own chats. -->
                 <div class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded ? 'hidden' : ''}">
-                    {#if memberChats.length == 0}
+                    {#if folderItemsFor(i).length == 0}
                     <span class="no-sort flex justify-center text-textcolor2">Empty</span>
                     <div></div>
                     {:else}
-                    {#each memberChats as chat}
-                    {@const chatIdx = chara.chats.indexOf(chat)}
+                    {#each folderItemsFor(i) as item (item.kind + ':' + item.index)}
+                    {#if item.kind === 'folder'}
+                        <div class="ml-2 min-w-0 border-l border-darkborderc pl-1">{@render folderRow(chara.chatFolders[item.index], item.index)}</div>
+                    {:else}
+                    {@const chatIdx = item.index}
+                    {@const chat = chara.chats[chatIdx]}
                     <button data-risu-chat-idx={chatIdx} draggable={!editMode} ondragstart={(event) => beginChatRoomDrag(event, chat)} onclick={() => {
                         if(!editMode){
                             changeChatTo(chatIdx)
@@ -540,6 +590,7 @@
                             </div>
                         </div>
                     </button>
+                    {/if}
                     {/each}
                     {/if}
                 </div>
@@ -655,10 +706,10 @@
     {#if recentMode}
     {#key sorted}
     <!-- pb-6: room under the last item to drop a chat out of its folder when no chat is loose. -->
-    <div class="risu-chat flex flex-col mt-2 pb-6 overflow-y-auto max-h-80" class:hidden={!!searchQuery} bind:this={listEle}>
+    <div class="risu-chat flex flex-col mt-2 pb-6 overflow-y-auto" style:max-height="{listHeight}px" class:hidden={!!searchQuery} bind:this={listEle}>
         {#each recentOrder.items as item (item.kind + ':' + item.index)}
             {#if item.kind === 'folder'}
-                {@render folderRow(chara.chatFolders[item.index], item.index, recentOrder.folderChats[item.index].map(index => chara.chats[index]))}
+                {@render folderRow(chara.chatFolders[item.index], item.index)}
             {:else}
                 {@render looseRow(chara.chats[item.index], item.index)}
             {/if}
@@ -667,12 +718,12 @@
     {/key}
     {:else}
     {#key sorted}
-    <div class="flex flex-col mt-2 overflow-y-auto max-h-80" class:hidden={!!searchQuery} bind:this={listEle}>
+    <div class="flex flex-col mt-2 overflow-y-auto" style:max-height="{listHeight}px" class:hidden={!!searchQuery} bind:this={listEle}>
         <!-- folder div -->
         <div class="flex flex-col" bind:this={folderEles}>
             <!-- chat folder -->
             {#each chara.chatFolders as folder, i}
-                {@render folderRow(folder, i, chara.chats.filter(chat => chat.folderId == folder.id))}
+                {#if recentOrder.folderParents[i] === null}{@render folderRow(folder, i)}{/if}
             {/each}
         </div>
         <!-- chat without folder div -->
@@ -685,6 +736,16 @@
         </div>
     </div>
     {/key}
+    {/if}
+    {#if !searchQuery}
+        <div class="flex justify-end pr-1">
+            <button type="button" class="h-5 w-6 cursor-nwse-resize text-textcolor2 touch-none select-none"
+                aria-label="Resize chat list" title="Resize chat list"
+                onpointerdown={gripDown} onpointermove={gripMove} onpointerup={gripUp} onpointercancel={gripUp}
+                ondragstart={(event) => event.preventDefault()}>
+                <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M18 5 5 18M18 10l-8 8M18 15l-3 3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+        </div>
     {/if}
     {#if searchQuery}<ChatSearchResults snapshot={searchSnapshot} open={openSearchHit}/>{/if}
 

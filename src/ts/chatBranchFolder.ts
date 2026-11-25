@@ -12,9 +12,9 @@ export function copyFolderPersonaName(db: Parameters<typeof boundPersona>[0] & {
  * Where a copy or branch of a chat goes when "분기 시 폴더 생성" is on.
  *
  * Copies made at one point of the story share a folder, and a copy made at
- * another point gets a folder of its own; folders stay flat (the user's
- * request, 2026-11-22: copies at messages 5, 6 and 7, two each, make three
- * folders of two). A point is the chat copied and how many messages the new
+ * another point gets a folder of its own. The flat storage array keeps each
+ * folder's own chats; a grown chat's new point folder is displayed inside its
+ * current point folder. A point is the chat copied and how many messages the new
  * chat shares with it, kept on the folder (`nodeOnlyCopyPoint`).
  *
  * The chat copied and its copy always end up in one folder (the user's
@@ -54,11 +54,13 @@ export function folderForChatCopy(
     let name = base
     for (let index = 2; taken.has(name); index++) name = `${base} (${index})`
     const folderId = makeId()
+    // CHAT-FOLDER-NESTING (2026-11-25): a grown chat's next point is a child of its current point.
     ;(owner.chatFolders ??= []).unshift({
         id: folderId,
         name,
         folded: false,
         nodeOnlyCopyPoint: { chatId: source.id ?? '', messages },
+        ...(sourceFolder?.nodeOnlyCopyPoint ? { nodeOnlyParentFolderId: sourceFolder.id } : {}),
     })
     // COPY-FOLDER-TOGETHER (2026-11-23): loose, or grown past its point folder, it moves in with its copy.
     source.folderId = folderId

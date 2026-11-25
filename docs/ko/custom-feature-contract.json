@@ -2123,6 +2123,37 @@
       ]
     },
     {
+      "id": "CHAT-FOLDER-NESTING",
+      "title": "채팅 복사 폴더 속 폴더 (분기 단계)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatBranchFolder.ts",
+        "src/ts/chatListOrder.ts",
+        "src/ts/chatFolderEdit.ts",
+        "src/ts/storage/database.svelte.ts",
+        "src/lib/SideBars/SideChatList.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatBranchFolder.ts", "contains": "CHAT-FOLDER-NESTING (2026-11-25)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "CHAT-FOLDER-NESTING (2026-11-25)" }
+      ],
+      "regressionTests": [
+        "src/ts/chatBranchFolder.test.ts",
+        "src/ts/chatListOrder.test.ts",
+        "src/ts/chatFolderEdit.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-LIST-RESIZE",
+      "title": "채팅 목록 높이 모서리로 조절",
+      "criticality": "core-ux",
+      "ownerFiles": ["src/lib/SideBars/SideChatList.svelte"],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "CHAT-LIST-RESIZE (2026-11-25)" }
+      ],
+      "regressionTests": ["src/ts/chatListOrder.test.ts"]
+    },
+    {
       "id": "BOT-CHAT-MEMO",
       "title": "봇별·채팅별 개인 메모 (포켓리스 전용)",
       "criticality": "core-ux",
