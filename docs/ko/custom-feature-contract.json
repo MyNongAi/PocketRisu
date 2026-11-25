@@ -68,6 +68,28 @@
       ]
     },
     {
+      "id": "CHAT-FOLDER-DELETE-BY-ID",
+      "title": "채팅 폴더 삭제가 다른 폴더를 비우지 않음",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatFolderEdit.ts",
+        "src/lib/SideBars/SideChatList.svelte"
+      ],
+      "requiredMarkers": [
+        {
+          "file": "src/ts/chatFolderEdit.ts",
+          "contains": "CHAT-FOLDER-DELETE-BY-ID (2026-11-25)"
+        },
+        {
+          "file": "src/lib/SideBars/SideChatList.svelte",
+          "contains": "CHAT-FOLDER-DELETE-BY-ID (2026-11-25)"
+        }
+      ],
+      "regressionTests": [
+        "src/ts/chatFolderEdit.test.ts"
+      ]
+    },
+    {
       "id": "KO-VIEW",
       "title": "봇·로어북·페르소나 한국어 보기와 MCP 번역 입력",
       "criticality": "core-ux",

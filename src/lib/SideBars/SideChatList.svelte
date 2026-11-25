@@ -2,6 +2,7 @@
     import { onDestroy, onMount, tick, untrack } from "svelte";
     import { v4 } from "uuid";
     import { orderChatList } from "src/ts/chatListOrder";
+    import { removeChatFolder } from "src/ts/chatFolderEdit";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, NotebookPenIcon, SearchIcon, XIcon } from "@lucide/svelte";
     import ChatSearchResults from './ChatSearchResults.svelte';
@@ -390,12 +391,13 @@
                             }
                         }} class="text-textcolor2 hover:text-primary mr-1 cursor-pointer" onclick={async (e) => {
                             e.stopPropagation()
+                            const target = folder
                             const sel = parseInt(await alertSelect([language.changeFolderColor, language.cancel]))
                             switch (sel) {
                                 case 0:
                                     const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
                                     const sel = parseInt(await alertSelect(colors))
-                                    folder.color = colors[sel]
+                                    if (Number.isInteger(sel) && sel >= 0 && sel < colors.length) target.color = colors[sel]
                                     break
                             }
                         }}>
@@ -416,17 +418,12 @@
                             }
                         }} class="text-textcolor2 hover:text-red-400 cursor-pointer" onclick={async (e) => {
                             e.stopPropagation()
-                            const d = await alertConfirm(`${language.removeConfirm}${folder.name}`)
-                            if (d) {
+                            // CHAT-FOLDER-DELETE-BY-ID (2026-11-25): the snippet's folder is a getter; it moves after the splice.
+                            const target = folder
+                            const d = await alertConfirm(`${language.removeConfirm}${target.name}`)
+                            if (d && removeChatFolder(chara.chatFolders, chara.chats, target)) {
                                 $ReloadGUIPointer += 1
-                                const folders = chara.chatFolders
-                                folders.splice(i, 1)
-                                chara.chats.forEach(chat => {
-                                    if (chat.folderId == folder.id) {
-                                        chat.folderId = null
-                                    }
-                                })
-                                chara.chatFolders = folders
+                                void requestImmediateSave()
                             }
                         }}>
                             <TrashIcon size={18}/>
