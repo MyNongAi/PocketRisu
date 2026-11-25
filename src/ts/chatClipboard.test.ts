@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BOARD_POST_SAFE_BYTES, backgroundPictureOf, boardCopyWrapper, boardLonghands, boardPostBytes, boardSafeStyles, buildPortableChatFragment, portableStyle, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, marginThroughTop, shouldRasterizeBoardBlock, writeChatClipboard } from './chatClipboard'
+import { BOARD_POST_SAFE_BYTES, backgroundPictureOf, boardCopyWrapper, boardDroppedStyles, boardLonghands, boardPostBytes, boardSafeStyles, buildPortableChatFragment, portableStyle, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, visibleImagePlan, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, marginThroughTop, shouldRasterizeBoardBlock, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -209,7 +209,9 @@ describe('clipboard layout snapshot', () => {
         expect(copy.querySelector('b')!.textContent).toBe('🍽️ Status')
         const icon = copy.body.firstElementChild!.querySelector(':scope > div') as HTMLElement
         expect(icon.style.height).toBe('40px')
-        expect(icon.querySelector('span')!.getAttribute('style')).toContain('rotate(-45deg)')
+        // Arca drops transform on posting (2026-11-13 probe); the copy leaves it out so the editor shows the posted result.
+        expect(icon.querySelector('span')!.getAttribute('style')).toContain('background-color:red')
+        expect(icon.querySelector('span')!.getAttribute('style')).not.toContain('rotate(-45deg)')
         expect(root.querySelector('b')!.textContent).toBe('Status')
     })
 
@@ -238,8 +240,8 @@ describe('clipboard layout snapshot', () => {
         expect(image.style.aspectRatio).toBe('1 / 1')
         expect(image.style.height).toBe('auto')
         expect(image.style.getPropertyPriority('aspect-ratio')).toBe('important')
-        expect(image.style.objectFit).toBe('cover')
-        expect(image.style.objectPosition).toBe('top')
+        expect(image.style.objectFit).toBe('')
+        expect(image.style.objectPosition).toBe('')
         expect(copy.querySelector('table')!.style.borderCollapse).toBe('separate')
         expect(image.hasAttribute('class')).toBe(false)
         expect(root.querySelector('img')!.className).toBe('hover-frame')
@@ -312,7 +314,7 @@ describe('clipboard layout snapshot', () => {
         expect(copy.querySelector('details')!.style.height).toBe('auto')
         expect(copy.querySelector('div')!.style.height).toBe('auto')
         expect(copy.querySelector('div')!.style.width).toBe('auto')
-        expect(copy.querySelector('div')!.style.overflow).toBe('visible')
+        expect(copy.querySelector('div')!.style.overflow).toBe('')
         expect(copy.querySelector('details')!.open).toBe(false)
     })
 
@@ -584,7 +586,8 @@ describe('clipboard image size (board post limits)', () => {
         expect(copy.querySelector('img')!.getAttribute('src')).toBe('data:image/webp;base64,PORTRAIT-80x80')
         // A board shows a pasted image at its pixel width (twice the shown size): no wider than shown.
         expect(copy.querySelector('img')!.style.maxWidth).toBe('min(100%, 80px)')
-        expect(copy.querySelector('div div, section div')!.getAttribute('style')).toContain('data:image/webp;base64,FRAME-300x120')
+        expect(shrinkImage).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/png;base64,/), 300, 120)
+        expect(copy.querySelector('div div, section div')!.getAttribute('style')).not.toContain('background-image:url(')
     })
 
     it('turns an empty box drawn with a cover background into an <img>, which a board keeps', async () => {
@@ -607,11 +610,11 @@ describe('clipboard image size (board post limits)', () => {
         expect(images[0].style.width).toBe('336px')
         expect(images[0].style.maxWidth).toBe('min(100%, 336px)')
         expect(images[0].style.height).toBe('auto')
-        expect(images[0].style.overflow).toBe('hidden')
+        expect(images[0].style.overflow).toBe('')
         expect(images[0].hasAttribute('class')).toBe(false)
-        // A box with text over its background keeps the background.
+        // Arca removes URL backgrounds on posting, so the editor copy removes them too.
         const textBox = Array.from(copy.querySelectorAll('div')).find((element) => element.textContent === 'text')!
-        expect(textBox.getAttribute('style')).toContain('data:image/webp;base64,FRAME')
+        expect(textBox.style.backgroundImage).toBe('')
         expect(root.querySelector('.scene')).not.toBeNull()
     })
 
@@ -657,6 +660,103 @@ describe('boardSafeStyles', () => {
         expect(boardLonghands('flex-flow', 'column')).toEqual([['flex-direction', 'column'], ['flex-wrap', 'nowrap']])
         expect(boardLonghands('place-items', 'center')).toEqual([['align-items', 'center'], ['justify-items', 'center']])
         expect(boardLonghands('flex-direction', 'column')).toBeNull()
+    })
+})
+
+describe('visible image frame crop', () => {
+    const box = { x: 0, y: 0, width: 160, height: 240 }
+    const frame = (rect: typeof box, x = true, y = true, radius = 0) => ({ rect, x, y, radius })
+    const plan = (changes: Partial<Parameters<typeof visibleImagePlan>[0]> = {}) => visibleImagePlan({
+        imageBox: box, insets: { left: 0, right: 0, top: 0, bottom: 0 }, naturalWidth: 160, naturalHeight: 240,
+        objectFit: 'fill', objectPosition: 'center', clips: [frame({ x: 0, y: 0, width: 160, height: 160 })], ...changes,
+    })
+
+    it('crops an in-flow portrait to the shorter frame', () => {
+        expect(plan().visible).toEqual({ x: 0, y: 0, width: 160, height: 160 })
+        expect(plan().target).toEqual({ x: 0, y: 0, width: 160, height: 240 })
+    })
+    it('handles negative margins and an absolute oversized picture', () => {
+        expect(plan({ imageBox: { x: -40, y: 0, width: 200, height: 160 } }).visible).toEqual({ x: 0, y: 0, width: 160, height: 160 })
+        expect(plan({ imageBox: { x: -30, y: -20, width: 260, height: 180 }, clips: [frame({ x: 0, y: 0, width: 200, height: 140 })] }).visible)
+            .toEqual({ x: 0, y: 0, width: 200, height: 140 })
+    })
+    it('places contain, none and scale-down pixels inside the visible box', () => {
+        const square = { x: 0, y: 0, width: 100, height: 100 }
+        expect(plan({ imageBox: square, naturalWidth: 200, naturalHeight: 100, objectFit: 'contain', clips: [] }).target)
+            .toEqual({ x: 0, y: 25, width: 100, height: 50 })
+        expect(plan({ imageBox: square, naturalWidth: 200, naturalHeight: 100, objectFit: 'none', clips: [] }).target)
+            .toEqual({ x: -50, y: 0, width: 200, height: 100 })
+        expect(plan({ imageBox: square, naturalWidth: 40, naturalHeight: 20, objectFit: 'scale-down', clips: [] }).target)
+            .toEqual({ x: 30, y: 40, width: 40, height: 20 })
+    })
+    it('carries a round radius, clips one axis, and omits fully hidden pictures', () => {
+        expect(plan({ imageBox: { x: 0, y: 0, width: 120, height: 120 }, clips: [frame({ x: 0, y: 0, width: 120, height: 120 }, true, true, 60)] }).clipRadius).toBe(60)
+        // The round frame is cut into the picture (Arca drops the frame's overflow), also for a picture that fills it.
+        expect(plan({ imageBox: { x: 0, y: 0, width: 120, height: 120 }, clips: [frame({ x: 0, y: 0, width: 120, height: 120 }, true, true, 60)] }).shape)
+            .toEqual({ x: 0, y: 0, width: 120, height: 120, radius: 60 })
+        expect(plan({ imageBox: { x: -40, y: 0, width: 240, height: 120 }, clips: [frame({ x: 0, y: 0, width: 120, height: 120 }, true, true, 90)] }).shape)
+            .toEqual({ x: 0, y: 0, width: 120, height: 120, radius: 60 })
+        expect(plan().shape).toBeUndefined()
+        expect(plan({ clips: [frame({ x: 30, y: 10, width: 40, height: 50 }, false, true)] }).visible)
+            .toEqual({ x: 0, y: 10, width: 160, height: 50 })
+        expect(plan({ clips: [frame({ x: 300, y: 0, width: 100, height: 100 })] }).visible).toBeNull()
+        expect(plan({ clips: [] }).clipped).toBe(false)
+    })
+
+    it('copies a clipped picture with cropped dimensions and leaves a plain one on its shrink path', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<div style="overflow:hidden;border-radius:12px"><img src="data:image/png;base64,AA==" style="width:160px;height:240px;object-fit:contain"></div><img src="data:image/png;base64,BB==">'
+        document.body.append(root)
+        const [frameBox, clipped, plain] = [root.querySelector('div')!, ...Array.from(root.querySelectorAll('img'))]
+        for (const image of [clipped, plain]) {
+            Object.defineProperty(image, 'complete', { value: false })
+            Object.defineProperty(image, 'naturalWidth', { value: 160 })
+            Object.defineProperty(image, 'naturalHeight', { value: 240 })
+        }
+        vi.spyOn(frameBox, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, width: 160, height: 160 } as DOMRect)
+        vi.spyOn(clipped, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, width: 160, height: 240 } as DOMRect)
+        vi.spyOn(plain, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, width: 80, height: 80 } as DOMRect)
+        const rasterizeVisible = vi.fn(async () => 'data:image/png;base64,CROP')
+        const shrinkImage = vi.fn(async (url: string) => url)
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { rasterizeVisible, shrinkImage }), 'text/html')
+        const images = copy.querySelectorAll('img')
+        expect(rasterizeVisible).toHaveBeenCalledTimes(1)
+        expect(images[0].src).toBe('data:image/png;base64,CROP')
+        expect(images[0].style.width).toBe('160px')
+        expect(images[0].style.aspectRatio).toBe('160 / 160')
+        expect(images[0].style.borderRadius).toBe('12px')
+        expect(images[0].style.objectFit).toBe('')
+        expect(images[1].getAttribute('src')).toBe('data:image/png;base64,BB==')
+    })
+})
+
+describe('posted Arca styles', () => {
+    it('removes probed declarations after the portable longhand rewrites', () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<div style="position:absolute;overflow:hidden;object-fit:cover;opacity:.5;background-image:url(a);gap:8px;display:flex;aspect-ratio:1 / 2;margin-left:-12px;background:linear-gradient(red,blue);flex-flow:column wrap"></div>'
+        boardSafeStyles(root); boardDroppedStyles(root)
+        const style = root.firstElementChild!.getAttribute('style')!
+        expect(style).not.toMatch(/position:|overflow:|object-fit:|opacity:|background-image:|flex-flow:/)
+        for (const kept of ['gap:8px', 'display:flex', 'aspect-ratio:1 / 2', 'margin-left:-12px', 'linear-gradient(red,blue)', 'flex-direction:column']) expect(style).toContain(kept)
+    })
+})
+
+describe('covering card backdrops', () => {
+    it('folds a full first layer into the card only in unfold mode', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<div style="position:relative;padding:16px"><div style="position:absolute;inset:0;z-index:0;background-color:#d9c7a1;border-radius:10px"></div><div style="position:relative;z-index:1">Card text</div></div>'
+        document.body.append(root)
+        const card = root.firstElementChild as HTMLElement
+        const backdrop = card.firstElementChild as HTMLElement
+        vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, width: 200, height: 140 } as DOMRect)
+        vi.spyOn(backdrop, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, width: 200, height: 140 } as DOMRect)
+        const unfolded = new DOMParser().parseFromString(await buildPortableChatFragment(root, { unboardable: 'unfold' }), 'text/html')
+        const folded = unfolded.querySelector('section > div, body > div > div') as HTMLElement
+        expect(['rgb(217, 199, 161)', '#d9c7a1']).toContain(folded.style.backgroundColor)
+        expect(folded.style.borderRadius).toBe('10px')
+        expect(folded.children).toHaveLength(1)
+        const drawn = new DOMParser().parseFromString(await buildPortableChatFragment(root, { unboardable: 'image', drawUnboardable: async () => 'data:image/png;base64,DRAWN' }), 'text/html')
+        expect(drawn.querySelector('img') || drawn.querySelector('body > div > div')!.children.length > 1).toBeTruthy()
     })
 })
 

@@ -13,6 +13,7 @@ import {
     boardPostBytes,
     boardCopyWrapper,
     boardSafeStyles,
+    boardDroppedStyles,
     buildPortableChatFragment,
     fetchClipboardDataUrl,
     hexColors,
@@ -86,6 +87,7 @@ export async function renderLogText(options: RenderLogOptions): Promise<Rendered
                 img.setAttribute('alt', img.getAttribute('alt') || 'from PocketRisu')
             })
             boardSafeStyles(doc.body)
+            boardDroppedStyles(doc.body)
             sections.push(`<div style="margin-bottom: 1rem;">
 <div style="display: flex; flex-direction: row; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
     ${icon ? `<img style="width: 40px; height: 40px; max-width: 40px; border-radius: 50%; object-fit: cover;" src="${icon}" alt="profile">` : ''}
@@ -99,7 +101,10 @@ export async function renderLogText(options: RenderLogOptions): Promise<Rendered
             onProgress?.('text', done + 1, blocks.length)
         }
         if (sections.length === 0) throw new Error(language.logCapture.empty)
-        const html = hexColors(boardCopyWrapper(sections.join('\n'), textColor, root.getPropertyValue('--risu-theme-bgcolor'), db.nodeOnlyCopyWidth, widestBody))
+        const safeCopy = new DOMParser().parseFromString(boardCopyWrapper(sections.join('\n'), textColor, root.getPropertyValue('--risu-theme-bgcolor'), db.nodeOnlyCopyWidth, widestBody), 'text/html')
+        boardSafeStyles(safeCopy.body)
+        boardDroppedStyles(safeCopy.body)
+        const html = hexColors(safeCopy.body.innerHTML)
         return { html, text: plain.join('\n\n'), bytes: boardPostBytes(html) }
     } finally {
         cleanup()

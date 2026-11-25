@@ -48,7 +48,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets, watchAssetViewport } from '../../ts/chatAssetWindow';
-    import { BOARD_POST_SAFE_BYTES, boardCopyWrapper, boardPostBytes, boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
+    import { BOARD_POST_SAFE_BYTES, boardCopyWrapper, boardDroppedStyles, boardPostBytes, boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
     let translating = $state(false)
     let editMode = $state(false)
@@ -1312,6 +1312,7 @@
                 if(!hasLiveBody) boardSafeTags(doc.body)
                 // Last write to the body's styles: the longhands a board keeps.
                 boardSafeStyles(doc.body)
+                boardDroppedStyles(doc.body)
 
                 let finalIconDataUrl = ''
                 
@@ -1345,7 +1346,10 @@
 </div>
 `, root.getPropertyValue('--risu-theme-textcolor'), root.getPropertyValue('--risu-theme-bgcolor'), DBState.db.nodeOnlyCopyWidth, bodyRoot?.getBoundingClientRect().width ?? 0)
 
-                return hexColors(html)
+                const safeCopy = new DOMParser().parseFromString(html, 'text/html')
+                boardSafeStyles(safeCopy.body)
+                boardDroppedStyles(safeCopy.body)
+                return hexColors(safeCopy.body.innerHTML)
             })()
             await writeChatClipboard(copyText, htmlPromise)
             // How large the post will be: a board refuses a post past its limit

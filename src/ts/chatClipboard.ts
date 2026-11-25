@@ -701,6 +701,56 @@ export function coverImagePlacement(sourceWidth: number, sourceHeight: number, b
     }
 }
 
+type ImageRectangle = { x: number; y: number; width: number; height: number }
+type ImageClip = { rect: ImageRectangle; x: boolean; y: boolean; radius?: number; contentX?: number; contentY?: number }
+export type VisibleImageInput = {
+    imageBox: ImageRectangle
+    insets: { left: number; right: number; top: number; bottom: number }
+    naturalWidth: number
+    naturalHeight: number
+    objectFit: string
+    objectPosition: string
+    clips: ImageClip[] // nearest ancestor first
+}
+export type VisibleImagePlan = { visible: ImageRectangle | null; target: ImageRectangle; content: ImageRectangle; clipRadius: number; clipped: boolean; clipOrigin?: { x: number; y: number }; shape?: ImageRectangle & { radius: number } }
+
+/** CLIPBOARD-FRAME-CROP (2026-11-25): decide what pixels survive ancestor clipping before any asset awaits. */
+export function visibleImagePlan(input: VisibleImageInput): VisibleImagePlan {
+    const box = input.imageBox
+    let left = box.x, top = box.y, right = box.x + box.width, bottom = box.y + box.height
+    let nearest: ImageClip | undefined
+    for (const clip of input.clips) {
+        if (!nearest) nearest = clip
+        if (clip.x) { left = Math.max(left, clip.rect.x); right = Math.min(right, clip.rect.x + clip.rect.width) }
+        if (clip.y) { top = Math.max(top, clip.rect.y); bottom = Math.min(bottom, clip.rect.y + clip.rect.height) }
+    }
+    const visible = right > left && bottom > top ? { x: left, y: top, width: right - left, height: bottom - top } : null
+    const clipped = !!visible && (Math.abs(left - box.x) > 1 || Math.abs(top - box.y) > 1 || Math.abs(right - box.x - box.width) > 1 || Math.abs(bottom - box.y - box.height) > 1)
+    const contentWidth = Math.max(0, box.width - input.insets.left - input.insets.right)
+    const contentHeight = Math.max(0, box.height - input.insets.top - input.insets.bottom)
+    const fit = input.objectFit || 'fill'
+    let placement: ImageRectangle
+    if (fit === 'fill' || !input.naturalWidth || !input.naturalHeight) placement = { x: 0, y: 0, width: contentWidth, height: contentHeight }
+    else if (fit === 'none') {
+        const tokens = input.objectPosition.trim().toLowerCase().split(/\s+/)
+        const horizontal = tokens[0] === 'top' || tokens[0] === 'bottom' ? tokens[1] || 'center' : tokens[0] || 'center'
+        const vertical = tokens[0] === 'top' || tokens[0] === 'bottom' ? tokens[0] : tokens[1] || 'center'
+        placement = { x: (contentWidth - input.naturalWidth) * objectPositionFraction(horizontal, 'x'), y: (contentHeight - input.naturalHeight) * objectPositionFraction(vertical, 'y'), width: input.naturalWidth, height: input.naturalHeight }
+    } else {
+        const resolved = fit === 'scale-down' ? (input.naturalWidth <= contentWidth && input.naturalHeight <= contentHeight ? 'none' : 'contain') : fit
+        if (resolved === 'none') return visibleImagePlan({ ...input, objectFit: 'none' })
+        placement = coverImagePlacement(input.naturalWidth, input.naturalHeight, contentWidth, contentHeight, input.objectPosition, resolved === 'cover' ? 'cover' : 'contain')
+    }
+    const target = { x: box.x + input.insets.left + placement.x - (visible?.x ?? box.x), y: box.y + input.insets.top + placement.y - (visible?.y ?? box.y), width: placement.width, height: placement.height }
+    const content = { x: box.x + input.insets.left - (visible?.x ?? box.x), y: box.y + input.insets.top - (visible?.y ?? box.y), width: contentWidth, height: contentHeight }
+    const clipRadius = visible && nearest && Math.abs(visible.x - nearest.rect.x) <= 1 && Math.abs(visible.y - nearest.rect.y) <= 1 && Math.abs(visible.width - nearest.rect.width) <= 1 && Math.abs(visible.height - nearest.rect.height) <= 1 ? nearest.radius ?? 0 : 0
+    // A rounded frame (a round avatar) is cut into the picture itself: Arca keeps no overflow to round it.
+    const shape = visible && nearest && (nearest.radius ?? 0) > 0
+        ? { x: nearest.rect.x - visible.x, y: nearest.rect.y - visible.y, width: nearest.rect.width, height: nearest.rect.height, radius: Math.min(nearest.radius!, nearest.rect.width / 2, nearest.rect.height / 2) }
+        : undefined
+    return { visible, target, content, clipRadius, clipped, clipOrigin: nearest ? { x: nearest.contentX ?? nearest.rect.x, y: nearest.contentY ?? nearest.rect.y } : undefined, shape }
+}
+
 function loadClipboardImage(url: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
         const image = new Image()
@@ -729,6 +779,23 @@ export async function rasterizeCoverImage(url: string, width: number, height: nu
     return encodeClipboardCanvas(canvas)
 }
 
+export async function rasterizeVisiblePart(url: string, plan: VisibleImagePlan): Promise<string> {
+    if (!plan.visible) throw new Error('Image has no visible area')
+    const image = await loadClipboardImage(url)
+    // Twice the shown size, like the cover crop (clipboardCanvas).
+    const [canvas, context] = clipboardCanvas(plan.visible.width, plan.visible.height)
+    if (plan.shape && typeof context.roundRect === 'function') {
+        context.beginPath()
+        context.roundRect(plan.shape.x, plan.shape.y, plan.shape.width, plan.shape.height, plan.shape.radius)
+        context.clip()
+    }
+    context.beginPath()
+    context.rect(plan.content.x, plan.content.y, plan.content.width, plan.content.height)
+    context.clip()
+    context.drawImage(image, plan.target.x, plan.target.y, plan.target.width, plan.target.height)
+    return encodeClipboardCanvas(canvas)
+}
+
 async function rasterizeBackgroundPicture(url: string, width: number, height: number, fit: 'cover' | 'contain', position: string): Promise<string> {
     const image = await loadClipboardImage(url)
     const [canvas, context] = clipboardCanvas(width, height)
@@ -754,6 +821,36 @@ export function backgroundPictureOf(source: Element, computed: CSSStyleDeclarati
     const size = computed.backgroundSize.trim()
     if (size !== 'cover' && !(size === 'contain' && computed.backgroundRepeat.trim() === 'no-repeat')) return null
     return { url: urls[0], fit: size, position: computed.backgroundPosition || 'center' }
+}
+
+function cssLayers(value: string): string[] {
+    const layers: string[] = []
+    let depth = 0, quote = '', start = 0
+    for (let index = 0; index < value.length; index++) {
+        const char = value[index]
+        if (quote) { if (char === quote && value[index - 1] !== '\\') quote = '' }
+        else if (char === '"' || char === "'") quote = char
+        else if (char === '(') depth++
+        else if (char === ')') depth = Math.max(0, depth - 1)
+        else if (char === ',' && depth === 0) { layers.push(value.slice(start, index).trim()); start = index + 1 }
+    }
+    layers.push(value.slice(start).trim())
+    return layers
+}
+
+function hasPaintedColor(value: string): boolean {
+    return !!value && value !== 'transparent' && !/rgba?\([^)]*,\s*0(?:\.0+)?\s*\)/i.test(value)
+}
+
+async function averagePictureColor(url: string): Promise<string> {
+    const image = await loadClipboardImage(url)
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Clipboard canvas is unavailable')
+    context.drawImage(image, 0, 0, 1, 1)
+    const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data
+    return `rgba(${r}, ${g}, ${b}, ${a / 255})`
 }
 
 async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): Promise<string> {
@@ -873,6 +970,7 @@ export async function buildPortableChatFragment(
         getPseudoStyle?: (element: Element, pseudo: '::before' | '::after') => CSSStyleDeclaration
         rasterizeSvg?: (svg: SVGSVGElement, width: number, height: number) => Promise<string>
         rasterizeCover?: (url: string, width: number, height: number, position: string) => Promise<string>
+        rasterizeVisible?: (url: string, plan: VisibleImagePlan) => Promise<string>
         rasterizeBackground?: (url: string, width: number, height: number, fit: 'cover' | 'contain', position: string) => Promise<string>
         shrinkImage?: (dataUrl: string, boxWidth: number, boxHeight: number) => Promise<string>
         unboardable?: CopyUnboardable
@@ -945,6 +1043,32 @@ export async function buildPortableChatFragment(
     const visible = new Set<Element>()
     const pseudoContent = new Set<Element>()
     const replacements = new Map<Element, HTMLElement>()
+    const rectOf = (box: DOMRect): ImageRectangle => ({ x: box.left ?? box.x ?? 0, y: box.top ?? box.y ?? 0, width: box.width, height: box.height })
+    const pixel = (value: string) => Number.parseFloat(value) || 0
+    const imagePlan = (source: HTMLElement, computed: CSSStyleDeclaration, box: DOMRect, naturalWidth: number, naturalHeight: number): VisibleImagePlan => {
+        const clips: ImageClip[] = []
+        for (let ancestor = source.parentElement; ancestor; ancestor = ancestor.parentElement) {
+            const style = styleOf(ancestor)
+            const overflowX = style.overflowX || style.overflow
+            const overflowY = style.overflowY || style.overflow
+            const x = !!overflowX && overflowX !== 'visible'
+            const y = !!overflowY && overflowY !== 'visible'
+            if (x || y) {
+                const frame = rectOf(ancestor.getBoundingClientRect())
+                const left = pixel(style.borderLeftWidth), right = pixel(style.borderRightWidth)
+                const top = pixel(style.borderTopWidth), bottom = pixel(style.borderBottomWidth)
+                const rect = { x: frame.x + left, y: frame.y + top, width: Math.max(0, frame.width - left - right), height: Math.max(0, frame.height - top - bottom) }
+                const rawRadius = style.borderTopLeftRadius || style.borderRadius
+                const radius = rawRadius?.includes('%') ? Math.min(rect.width, rect.height) * pixel(rawRadius) / 100 : pixel(rawRadius)
+                clips.push({ rect, x, y, radius: Math.max(0, radius - Math.max(left, top)), contentX: rect.x + pixel(style.paddingLeft), contentY: rect.y + pixel(style.paddingTop) })
+            }
+            if (ancestor === sourceRoot) break
+        }
+        return visibleImagePlan({ imageBox: rectOf(box), insets: {
+            left: pixel(computed.borderLeftWidth) + pixel(computed.paddingLeft), right: pixel(computed.borderRightWidth) + pixel(computed.paddingRight),
+            top: pixel(computed.borderTopWidth) + pixel(computed.paddingTop), bottom: pixel(computed.borderBottomWidth) + pixel(computed.paddingBottom),
+        }, naturalWidth, naturalHeight, objectFit: computed.objectFit, objectPosition: computed.objectPosition, clips })
+    }
     for (let index = 0; index < Math.min(sources.length, clones.length); index++) {
         const source = sources[index]
         const clone = clones[index]
@@ -962,6 +1086,33 @@ export async function buildPortableChatFragment(
             continue
         }
         visible.add(source)
+        if (options.unboardable !== 'image' && source instanceof HTMLElement && source !== sourceRoot && source.parentElement && source.parentElement.firstElementChild === source
+            && computed.position === 'absolute' && !textContentFlags.get(source) && source.parentElement.children.length > 1
+            // A picture backdrop (<img>, video, canvas, svg) stays a picture: folding it into a colour would lose it.
+            && !/^(IMG|VIDEO|CANVAS|SVG)$/i.test(source.tagName) && !source.querySelector('img,video,canvas,svg')) {
+            const parent = source.parentElement
+            const frame = parent.getBoundingClientRect(), layer = source.getBoundingClientRect()
+            const parentStyle = styleOf(parent)
+            const innerWidth = frame.width - pixel(parentStyle.borderLeftWidth) - pixel(parentStyle.borderRightWidth)
+            const innerHeight = frame.height - pixel(parentStyle.borderTopWidth) - pixel(parentStyle.borderBottomWidth)
+            if (innerWidth > 0 && innerHeight > 0 && layer.width >= innerWidth * .9 && layer.height >= innerHeight * .9
+                && (!computed.zIndex || computed.zIndex === 'auto' || (Number(computed.zIndex) || 0) <= (Number(styleOf(parent.lastElementChild!).zIndex) || 0))) {
+                const parentClone = clones[sources.indexOf(parent)] as HTMLElement
+                if (!hasPaintedColor(parentStyle.backgroundColor) && (!parentStyle.backgroundImage || parentStyle.backgroundImage === 'none')) {
+                    if (hasPaintedColor(computed.backgroundColor)) parentClone.style.backgroundColor = computed.backgroundColor
+                    const gradients = cssLayers(computed.backgroundImage || '').filter(layer => /^(?:repeating-)?(?:linear|radial)-gradient\(/i.test(layer))
+                    if (gradients.length) parentClone.style.backgroundImage = gradients.join(', ')
+                    else if (!hasPaintedColor(computed.backgroundColor)) {
+                        const url = extractCssUrls(computed.backgroundImage || '')[0]
+                        if (url) assetTasks.push(async () => { try { parentClone.style.backgroundColor = await averagePictureColor(await toDataUrl(url)) } catch { /* no fallback color */ } })
+                    }
+                }
+                if (!pixel(parentStyle.borderTopLeftRadius || parentStyle.borderRadius)) parentClone.style.borderRadius = computed.borderRadius
+                if (!parentStyle.boxShadow || parentStyle.boxShadow === 'none') parentClone.style.boxShadow = computed.boxShadow
+                hidden.add(source); hiddenClones.push(clone)
+                continue
+            }
+        }
         const closedDetails = source instanceof HTMLDetailsElement && !source.open
         if (closedDetails || computed.getPropertyValue('content-visibility') === 'hidden') {
             const summary = closedDetails ? source.querySelector(':scope > summary') : null
@@ -1042,6 +1193,8 @@ export async function buildPortableChatFragment(
         // Capture the URL before a concurrent viewport update can release it.
         const imageUrl = source instanceof HTMLImageElement ? source.currentSrc || source.getAttribute('src') : null
         const imageBox = source instanceof HTMLImageElement ? source.getBoundingClientRect() : null
+        const plan = source instanceof HTMLImageElement && imageBox && imageBox.width > 0 && imageBox.height > 0
+            ? imagePlan(source, computed, imageBox, source.naturalWidth, source.naturalHeight) : null
         // An asset name no module has (an empty src) or a picture that failed
         // to load: nothing in the chat, and on a board a broken link back to
         // this app.
@@ -1052,11 +1205,31 @@ export async function buildPortableChatFragment(
                 clone.remove()
                 return
             }
+            if (plan && !plan.visible) { clone.remove(); return }
             if (imageUrl && clone instanceof HTMLImageElement) {
+                let usedVisible = false
                 try {
                     const embedded = await toDataUrl(imageUrl)
                     clone.src = embedded
-                    if (computed.objectFit === 'cover' && imageBox && imageBox.width > 0 && imageBox.height > 0 && !/^data:image\/(?:gif|svg\+xml)/i.test(embedded)) {
+                    const redrawable = !/^data:image\/(?:gif|svg\+xml)/i.test(embedded) && !isAnimatedImageDataUrl(embedded)
+                    if (plan?.visible && redrawable && !nonTranslationTransform(computed.transform) && (plan.clipped || !!plan.shape || !/^(?:fill|cover)$/i.test(computed.objectFit || 'fill'))) {
+                        try {
+                            clone.src = await (options.rasterizeVisible ?? rasterizeVisiblePart)(embedded, plan)
+                            usedVisible = true
+                            const { visible } = plan
+                            clone.style.width = `${visible.width}px`
+                            clone.style.maxWidth = boardMaxWidth(visible.width)
+                            clone.style.setProperty('height', 'auto', 'important')
+                            clone.style.setProperty('aspect-ratio', `${visible.width} / ${visible.height}`, 'important')
+                            if (!pixel(computed.borderTopLeftRadius || computed.borderRadius) && plan.clipRadius) clone.style.borderRadius = `${plan.clipRadius}px`
+                            for (const property of ['object-fit', 'object-position', 'position', 'top', 'right', 'bottom', 'left', 'inset', 'transform', 'z-index']) clone.style.removeProperty(property)
+                            if (plan.clipOrigin && (/^(absolute|fixed)$/.test(computed.position) || pixel(computed.marginLeft) < 0 || pixel(computed.marginTop) < 0 || /translate/i.test(computed.transform))) {
+                                clone.style.marginLeft = `${visible.x - plan.clipOrigin.x}px`
+                                clone.style.marginTop = `${visible.y - plan.clipOrigin.y}px`
+                                clone.style.marginRight = '0px'; clone.style.marginBottom = '0px'
+                            }
+                        } catch { clone.src = await toShownDataUrl(imageUrl, imageBox?.width ?? 0, imageBox?.height ?? 0) }
+                    } else if (computed.objectFit === 'cover' && imageBox && imageBox.width > 0 && imageBox.height > 0 && redrawable) {
                         try {
                             clone.src = await (options.rasterizeCover ?? rasterizeCoverImage)(embedded, imageBox.width, imageBox.height, computed.objectPosition)
                             clone.style.setProperty('aspect-ratio', 'auto', 'important')
@@ -1068,7 +1241,7 @@ export async function buildPortableChatFragment(
                         clone.src = await toShownDataUrl(imageUrl, imageBox?.width ?? 0, imageBox?.height ?? 0)
                     }
                 } catch { clone.src = imageUrl }
-                if (imageBox && imageBox.width > 0) clone.style.maxWidth = boardMaxWidth(imageBox.width)
+                if (imageBox && imageBox.width > 0 && !usedVisible) clone.style.maxWidth = boardMaxWidth(imageBox.width)
                 clone.removeAttribute('srcset')
                 clone.removeAttribute('loading')
             } else {
@@ -1185,6 +1358,8 @@ export async function buildPortableChatFragment(
     const holder = cloneRoot.ownerDocument.createElement('div')
     holder.append(cloneRoot)
     boardSafeTags(holder)
+    boardSafeStyles(holder)
+    boardDroppedStyles(holder)
     return holder.innerHTML
 }
 
@@ -1340,6 +1515,34 @@ export function boardSafeStyles(root: Element): void {
             declarations.push(declaration)
         }
         if (changed) element.setAttribute('style', declarations.join(';'))
+    }
+}
+
+// Dropped by the posted Arca probe on 2026-11-13; unknown declarations remain untouched.
+const BOARD_DROPPED_PROPERTIES = new Set(`position top right bottom left inset z-index transform transform-origin perspective backface-visibility
+    overflow overflow-x overflow-y white-space opacity filter backdrop-filter clip-path mask-image mix-blend-mode isolation
+    object-fit object-position visibility writing-mode direction place-items justify-items justify-self grid-area grid-row
+    grid-column flex-flow overflow-wrap -webkit-text-fill-color -webkit-line-clamp cursor pointer-events user-select
+    transition animation animation-delay outline outline-offset appearance will-change table-layout scrollbar-width`.split(/\s+/).filter(Boolean))
+
+export function boardDroppedStyles(root: Element): void {
+    for (const element of [root, ...Array.from(root.querySelectorAll('[style]'))]) {
+        const original = element.getAttribute('style')
+        if (!original) continue
+        const declarations = styleDeclarations(original).filter((declaration) => {
+            const colon = declaration.indexOf(':')
+            if (colon < 0) return true
+            const property = declaration.slice(0, colon).trim().toLowerCase()
+            const value = declaration.slice(colon + 1).trim().replace(/\s*!important\s*$/i, '').trim()
+            if (BOARD_DROPPED_PROPERTIES.has(property)) return false
+            if (property === 'display' && /^(contents|flow-root)$/i.test(value)) return false
+            if (property === 'text-align' && /^(justify|start|end)$/i.test(value)) return false
+            return !(property === 'background' || property === 'background-image') || !/url\s*\(/i.test(value)
+        })
+        if (declarations.join(';') !== styleDeclarations(original).join(';')) {
+            if (declarations.length) element.setAttribute('style', declarations.join(';'))
+            else element.removeAttribute('style')
+        }
     }
 }
 

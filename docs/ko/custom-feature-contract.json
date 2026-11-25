@@ -300,7 +300,7 @@
         { "file": "src/ts/chatClipboard.ts", "contains": "export function boardSafeTags(root: Element): void" },
         { "file": "src/ts/chatClipboard.ts", "contains": "boardSafeTags(holder)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if(!hasLiveBody) boardSafeTags(doc.body)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "return hexColors(html)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "return hexColors(safeCopy.body.innerHTML)" },
         { "file": "src/ts/chatClipboard.ts", "contains": "replaceFormControls(cloneRoot)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "viewportAssetVisible" },
         { "file": "src/ts/chatAssetWindow.ts", "contains": "export function watchAssetViewport(element: Element, onChange: (visible: boolean) => void): () => void" },
@@ -2731,6 +2731,22 @@
       ]
     },
     {
+      "id": "CLIPBOARD-FRAME-CROP",
+      "title": "아카 복사: 액자에 잘린 그림을 미리 잘라 넣기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatClipboard.ts",
+        "src/ts/chatClipboard.test.ts",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/ts/gui/logTextRender.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatClipboard.ts", "contains": "CLIPBOARD-FRAME-CROP (2026-11-25)" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "function boardDroppedStyles" }
+      ],
+      "regressionTests": ["src/ts/chatClipboard.test.ts"]
+    },
+    {
       "id": "CLIPBOARD-BOARD-SIZE",
       "title": "채팅 복사·로그 이미지 복사를 게시판(아카) 크기에 맞추기",
       "criticality": "core-ux",
@@ -2751,7 +2767,7 @@
         { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "new ClipboardItem({ 'image/png': fitForCopy(image.blob) })" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export function backgroundPictureOf(" },
         { "file": "src/ts/chatClipboard.ts", "contains": "(options.rasterizeBackground ?? rasterizeBackgroundPicture)" },
-        { "file": "src/ts/chatClipboard.ts", "contains": "if (imageBox && imageBox.width > 0) clone.style.maxWidth = boardMaxWidth(imageBox.width)" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "if (imageBox && imageBox.width > 0 && !usedVisible) clone.style.maxWidth = boardMaxWidth(imageBox.width)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "width: 40px; height: 40px; max-width: 40px; border-radius: 50%;" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export function boardLonghands(property: string, value: string)" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export function boardSafeStyles(root: Element): void {" },
