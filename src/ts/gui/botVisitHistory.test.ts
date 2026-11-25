@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createBotVisitHistory, installMouseHistoryButtons } from './botVisitHistory'
+import { createBotVisitHistory, installMouseHistoryButtons, paneBotVisits, swapPaneBotVisits } from './botVisitHistory'
 
 describe('the bots opened, stepped through like pages', () => {
     const opener = (gone: string[] = []) => vi.fn((id: string) => !gone.includes(id))
@@ -51,6 +51,25 @@ describe('the bots opened, stepped through like pages', () => {
         expect(history.visits).toEqual(['b', 'c', 'd'])
         expect(history.at).toBe(2)
     })
+
+    it('keeps separate session histories and swaps them with the panes', () => {
+        const main = paneBotVisits('main')
+        const side = paneBotVisits('side')
+        expect(main).not.toBe(side)
+        main.record('main-only')
+        side.record('side-only')
+        expect(main.visits).toContain('main-only')
+        expect(main.visits).not.toContain('side-only')
+        expect(side.visits).toContain('side-only')
+        expect(side.visits).not.toContain('main-only')
+        swapPaneBotVisits()
+        try {
+            expect(paneBotVisits('main')).toBe(side)
+            expect(paneBotVisits('side')).toBe(main)
+        } finally {
+            swapPaneBotVisits()
+        }
+    })
 })
 
 describe('the mouse back and forward buttons', () => {
@@ -66,7 +85,8 @@ describe('the mouse back and forward buttons', () => {
         const remove = installMouseHistoryButtons(target, onStep)
         expect(press(target as unknown as EventTarget, 3)).toEqual([true, true, true])
         expect(press(target as unknown as EventTarget, 4)).toEqual([true, true, true])
-        expect(onStep.mock.calls).toEqual([[-1], [1]])
+        expect(onStep.mock.calls.map(([direction]) => direction)).toEqual([-1, 1])
+        expect(onStep.mock.calls[0][1]).toBeInstanceOf(MouseEvent)
         expect(press(target as unknown as EventTarget, 0)).toEqual([false, false, false])
         remove()
         expect(press(target as unknown as EventTarget, 3)).toEqual([false, false, false])

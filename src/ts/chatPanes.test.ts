@@ -45,6 +45,7 @@ const { activatePane, applySelectedChatToggles, restorePanesAfterBoot, returnToM
 const { splitLayout } = await import('./splitLayout.svelte')
 const { splitChatOpen } = await import('./chatSplitPane')
 const { ensureChatHydrated } = await import('./storage/chatStorage')
+const { paneBotVisits } = await import('./gui/botVisitHistory')
 
 describe('the two panes of the split', () => {
     beforeEach(() => {
@@ -203,6 +204,20 @@ describe('the two panes of the split', () => {
         expect(get(selectedCharID)).toBe(1)
         expect(mainPaneView.chat?.id).toBe('b1')
         expect(sidePaneView.chat?.id).toBe('a1')
+    })
+
+    it('records a dropped side bot only there and swaps visits with the chats', () => {
+        const mainVisits = paneBotVisits('main')
+        const sideVisits = paneBotVisits('side')
+        mainVisits.record('a')
+        showInSidePane({ chaId: 'b', chatId: 'b1' })
+        expect(sideVisits.visits.at(-1)).toBe('b')
+        expect(mainVisits.visits.at(-1)).toBe('a')
+        swapPanes()
+        expect(paneBotVisits('main')).toBe(sideVisits)
+        expect(paneBotVisits('side')).toBe(mainVisits)
+        // Leave the module's session histories in their original positions.
+        swapPanes()
     })
 
     it('a chat taking the selection back drops what its pane kept, so it is never laid over newer values', () => {

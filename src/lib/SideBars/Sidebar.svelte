@@ -1756,6 +1756,7 @@
 {#if DBState.db.menuSideBar}
 <div
   bind:this={railRoot}
+  data-pane-rail={pane}
   onpointerdowncapture={takePaneSelection}
   onfocusincapture={takePaneSelection}
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
@@ -1830,6 +1831,7 @@
      its bot list hands that pane the selection, so a bot opens there. -->
 <div
   bind:this={railRoot}
+  data-pane-rail={pane}
   onpointerdowncapture={takePaneSelection}
   onfocusincapture={takePaneSelection}
   class="h-full flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"

@@ -1,3 +1,5 @@
+import type { PaneId } from '../chatPanes.svelte'
+
 // The bots opened in this session, in order, so a mouse's back and forward
 // buttons step through them like pages (the user's request, 2026-10-30:
 // "방금 본 봇을 앞으로 가든 뒤로 가든"). Browsers turn those buttons into page
@@ -59,13 +61,13 @@ export function createBotVisitHistory(max = MAX_VISITS): BotVisitHistory {
  * Take the mouse's back and forward buttons over: the step runs on release,
  * and the browser's own page step is held back on press and release alike.
  */
-export function installMouseHistoryButtons(target: Pick<Window, 'addEventListener' | 'removeEventListener'>, onStep: (direction: -1 | 1) => void): () => void {
+export function installMouseHistoryButtons(target: Pick<Window, 'addEventListener' | 'removeEventListener'>, onStep: (direction: -1 | 1, event: MouseEvent) => void): () => void {
     const hold = (event: Event) => {
         const direction = STEP_BY_BUTTON[(event as MouseEvent).button]
         if (!direction) return
         event.preventDefault()
         event.stopPropagation()
-        if (event.type === 'mouseup') onStep(direction)
+        if (event.type === 'mouseup') onStep(direction, event as MouseEvent)
     }
     const types = ['mousedown', 'mouseup', 'auxclick'] as const
     for (const type of types) target.addEventListener(type, hold, true)
@@ -74,4 +76,15 @@ export function installMouseHistoryButtons(target: Pick<Window, 'addEventListene
     }
 }
 
-export const botVisits = createBotVisitHistory()
+// SPLIT-PANE-BOT-VISITS (2026-11-25): the user's report says each split pane
+// should remember its own bots, like separate windows. These stay session-only.
+let visitsByPane: Record<PaneId, BotVisitHistory> = {
+    main: createBotVisitHistory(),
+    side: createBotVisitHistory(),
+}
+
+export function paneBotVisits(pane: PaneId): BotVisitHistory { return visitsByPane[pane] }
+
+export function swapPaneBotVisits(): void {
+    visitsByPane = { main: visitsByPane.side, side: visitsByPane.main }
+}

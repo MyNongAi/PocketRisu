@@ -581,6 +581,30 @@
       "regressionTests": ["src/ts/chatPanes.test.ts"]
     },
     {
+      "id": "SPLIT-PANE-BOT-VISITS",
+      "title": "분할 화면: 각 칸의 봇 방문 기록",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/botVisitHistory.ts",
+        "src/ts/gui/botVisitButtons.ts",
+        "src/ts/characters.ts",
+        "src/ts/paneActivation.ts",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/ts/gui/botVisitHistory.test.ts",
+        "src/ts/gui/botVisitButtons.test.ts",
+        "src/ts/chatPanes.test.ts",
+        "docs/ko/custom-feature-contract.json",
+        "docs/ko/custom-feature-ledger.md"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/botVisitHistory.ts", "contains": "SPLIT-PANE-BOT-VISITS (2026-11-25)" },
+        { "file": "src/ts/gui/botVisitButtons.ts", "contains": "SPLIT-PANE-BOT-VISITS (2026-11-25)" },
+        { "file": "src/ts/characters.ts", "contains": "SPLIT-PANE-BOT-VISITS (2026-11-25)" },
+        { "file": "src/ts/paneActivation.ts", "contains": "SPLIT-PANE-BOT-VISITS (2026-11-25)" }
+      ],
+      "regressionTests": ["src/ts/gui/botVisitHistory.test.ts", "src/ts/gui/botVisitButtons.test.ts", "src/ts/chatPanes.test.ts"]
+    },
+    {
       "id": "RAIL-BOTLIST-TOGGLE",
       "title": "봇 목록 고정 추가 버튼과 칸별 접기",
       "criticality": "core-ux",

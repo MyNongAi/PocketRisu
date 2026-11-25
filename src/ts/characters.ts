@@ -24,7 +24,9 @@ import { promoteDepartedCharacter, promoteRecentlyViewedCharacter } from "./char
 import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/boundedObjectUrlCache";
 import { getFirstMessageAtIndex } from "./firstMessage";
 import { needsCharacterRuntimeNormalization } from "./characterRuntime";
-import { botVisits } from "./gui/botVisitHistory";
+import { paneBotVisits } from "./gui/botVisitHistory";
+import { paneState } from "./chatPanes.svelte";
+import { isEmbeddedRisuPane, splitChatOpen } from "./chatSplitPane";
 import { characterIdsBefore, characterToOpenAfterImport } from "./importNavigation";
 
 const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
@@ -1116,6 +1118,9 @@ export function changeChar(index: number, arg:{
         selectedCharacter.lastInteraction = Date.now()
     }
     recordCharacterOpened(nextCharacterId)
+    // SPLIT-PANE-BOT-VISITS (2026-11-25): the user's report requires the bot
+    // opened here to belong to the selected pane. Formerly: botVisits.record(nextCharacterId).
+    const botVisits = paneBotVisits(get(splitChatOpen) && !isEmbeddedRisuPane ? paneState.active : 'main')
     botVisits.record(nextCharacterId)
     const db = getDatabase()
     selectedCharID.set(index);

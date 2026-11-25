@@ -11,6 +11,7 @@ import { locateChat, paneState, paneToggles, persistPanes, pinnedToggleValues, s
 import { persistSplitLayout, splitLayout, type PanelTab } from './splitLayout.svelte'
 import { markSeen } from './newMarks.svelte'
 import { isEmbeddedRisuPane, splitChatOpen } from './chatSplitPane'
+import { paneBotVisits, swapPaneBotVisits } from './gui/botVisitHistory'
 
 /** SPLIT-PANE-HOME (2026-11-25): Home clears only the active split pane. */
 export function sendActivePaneHome(): void {
@@ -40,6 +41,8 @@ function showPanelTab(tab: PanelTab): void {
 function handOver(from: PaneId): void {
     const db = getDatabase()
     const ids = selectedChatIds()
+    // SPLIT-PANE-BOT-VISITS (2026-11-25): the selected bot may have come from boot.
+    if (!paneState.home[from]) paneBotVisits(from).record(ids?.chaId)
     const at = locateChat(db.characters ?? [], ids)
     const chat = at ? db.characters[at.characterIndex]?.chats?.[at.chatIndex] : undefined
     // Still loading after a pane switch: the live values are the previous
@@ -155,7 +158,11 @@ export function activatePane(pane: PaneId): boolean {
     handOver(paneState.active)
     paneState.held[paneState.active] = selectedChatIds()
     paneState.active = pane
-    if (target) selectChat(target.characterIndex, target.chatIndex)
+    if (target) {
+        selectChat(target.characterIndex, target.chatIndex)
+        // SPLIT-PANE-BOT-VISITS (2026-11-25): selecting a held chat bypasses changeChar.
+        paneBotVisits(pane).record(getDatabase().characters[target.characterIndex]?.chaId)
+    }
     else selectedCharID.set(-1)
     showPanelTab(splitLayout.tab[pane])
     persistPanes()
@@ -169,6 +176,8 @@ export function swapPanes(): void {
     paneState.held[active] = selectedChatIds()
     const { main, side } = paneState.held
     paneState.held = { main: side, side: main }
+    // SPLIT-PANE-BOT-VISITS (2026-11-25): visits follow their pane's chats.
+    swapPaneBotVisits()
     paneState.home = { main: paneState.home.side, side: paneState.home.main }
     const target = locateChat(getDatabase().characters ?? [], paneState.held[active])
     if (target) selectChat(target.characterIndex, target.chatIndex)
@@ -181,6 +190,8 @@ export function showInSidePane(ids: PaneChatIds): boolean {
     const target = locateChat(getDatabase().characters ?? [], ids)
     if (!target) return false
     paneState.held.side = ids
+    // SPLIT-PANE-BOT-VISITS (2026-11-25): a drop opens the side bot without changeChar.
+    paneBotVisits('side').record(ids.chaId)
     paneState.home.side = false
     if (paneState.active === 'side') selectChat(target.characterIndex, target.chatIndex)
     else {
@@ -220,7 +231,14 @@ export function settlePanesForClosedSplit(): void {
  * pane gets its chat back (the other pane draws its own by id anyway).
  */
 export function restorePanesAfterBoot(): void {
-    if (get(selectedCharID) >= 0) return
+    // SPLIT-PANE-BOT-VISITS (2026-11-25): both restored panes have visits,
+    // including the one that never takes the app's selection at boot.
+    const inactive: PaneId = paneState.active === 'main' ? 'side' : 'main'
+    if (!paneState.home[inactive]) paneBotVisits(inactive).record(paneState.held[inactive]?.chaId)
+    if (get(selectedCharID) >= 0) {
+        if (!paneState.home[paneState.active]) paneBotVisits(paneState.active).record(getDatabase().characters[get(selectedCharID)]?.chaId)
+        return
+    }
     if (paneState.home[paneState.active]) return
     const ids = paneState.held[paneState.active]
     const target = locateChat(getDatabase().characters ?? [], ids)
@@ -229,5 +247,7 @@ export function restorePanesAfterBoot(): void {
     // pane still kept for it is older.
     delete paneToggles[ids.chatId]
     selectChat(target.characterIndex, target.chatIndex, true)
+    // SPLIT-PANE-BOT-VISITS (2026-11-25): restoring a held bot bypasses changeChar.
+    paneBotVisits(paneState.active).record(ids.chaId)
     persistPanes()
 }
