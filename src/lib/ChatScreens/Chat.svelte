@@ -33,6 +33,7 @@
     import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import { getPaneView, selectedChatIds } from "src/ts/chatPanes.svelte"
     import { paneMayRedraw, PaneRedrawGate } from "src/ts/gui/paneRedraw"
+    import { withFallbackTimeout } from "src/ts/gui/parsedBodyCache"
     import { scrollWithinContainer } from './scrollWithin'
     import { backgroundGate } from "src/ts/gui/backgroundGate.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
@@ -719,8 +720,11 @@
 
         loadingTranslationEdit = true
         try {
-            const key = await getTranslationCacheKey()
-            const cached = await getLLMCache(key)
+            // CHAT-BODY-RESUME (2026-11-25): A stalled lookup must release the pencil.
+            const [key, cached] = await withFallbackTimeout((async () => {
+                const key = await getTranslationCacheKey()
+                return [key, await getLLMCache(key)] as const
+            })(), 8000, () => { throw new Error('Translation edit lookup timed out') })
             editTranslationKey = key
             editTranslationText = cached ?? ''
             editTranslationMode = true
@@ -1105,6 +1109,8 @@
             {#key `${totalLengthPointer}|${effectiveResolveChatAssets}`}
                 <ChatBody
                     {character}
+                    chatId={view.chat?.id}
+                    messageId={messageKey || undefined}
                     {firstMessage}
                     {idx}
                     {forLog}

@@ -4567,6 +4567,23 @@
         { "file": "src/lang/ko.ts", "contains": "replyBusy: \"답을 쓰는 중이에요. 중지한 뒤 다시 눌러 주세요.\"" }
       ],
       "regressionTests": []
+    },
+    {
+      "id": "CHAT-BODY-RESUME",
+      "title": "돌아왔을 때 메시지 본문이 비지 않음",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/parsedBodyCache.ts",
+        "src/lib/ChatScreens/ChatBody.svelte",
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/parsedBodyCache.ts", "contains": "CHAT-BODY-RESUME (2026-11-25)" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "CHAT-BODY-RESUME (2026-11-25)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/parsedBodyCache.test.ts"
+      ]
     }
   ]
 }

@@ -3,7 +3,8 @@
     import { DBState } from 'src/ts/stores.svelte'
     import { sleep } from "src/ts/util"
     import { alertError } from "../../ts/alert"
-    import { onDestroy, tick, untrack } from 'svelte'
+    import { onDestroy, onMount, tick, untrack } from 'svelte'
+    import { getParsedBody, parsedBodyKey, pendingBodyNeedsRestart, plainBodyHtml, putParsedBody, withFallbackTimeout } from 'src/ts/gui/parsedBodyCache'
     import { MorphedHtml } from "src/ts/gui/morphHtml"
     import { scopePaneRadios } from "src/ts/gui/paneFormScope"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, resolveInlayPlaceholders, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
@@ -19,6 +20,8 @@
         character?: simpleCharacterArgument|string|null
         firstMessage?: boolean
         idx?: number
+        chatId?: string
+        messageId?: string
         msgDisplay?: string
         name?: string
         role: string|null
@@ -40,6 +43,8 @@
     let {
         character = null,
         idx = 0,
+        chatId,
+        messageId,
         firstMessage = false,
         msgDisplay,
         role,
@@ -62,8 +67,18 @@
         ? undefined
         : captureModuleRuntimeContext(view.character, view.chat))
 
+    // CHAT-BODY-RESUME (2026-11-25): A remount can draw the last completed body immediately.
+    const currentBodyKey = () => parsedBodyKey({
+        chatId, messageId, index: idx, source: msgDisplay ?? '',
+        mode: `${forLog ? 'log' : 'notrim'}:${firstMessage}:${role}`,
+        translated, hideAllImages: !!DBState.db?.hideAllImages, resolveAssets,
+    })
     // svelte-ignore non_reactive_update
-    let lastParsed = ''
+    let lastParsed = getParsedBody(currentBodyKey()) ?? ''
+    let pendingFallback = $state('')
+    let resumeRevision = $state(0)
+    let pendingSince: number | null = null
+    let lateAssetRedraw = false
     let lastCharArg:string|simpleCharacterArgument = null
     let lastChatId = -10
     let stopInlayResolution = () => {}
@@ -90,6 +105,26 @@
     const hasRenderableResult = (result: string | null | undefined) => {
         return typeof result === 'string' && result.trim().length > 0
     }
+
+    const parseBody = (data: string, charArg: string | simpleCharacterArgument, mode: 'notrim' | 'pretranslate', chatID: number) => {
+        const options = { resolveAssets, context: paneRenderContext() }
+        const work = ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), options)
+        // Asset manifest and file lookups can wait indefinitely after mobile wake.
+        return resolveAssets
+            ? withFallbackTimeout(work, 4000, () => {
+                // Drawn without its pictures for now; when the lookup finishes after all,
+                // the body is drawn once more with them (once per mount, so a slow server cannot loop).
+                if (!lateAssetRedraw) {
+                    lateAssetRedraw = true
+                    work.then(() => { if (!destroyed) resumeRevision++ }, () => {})
+                }
+                return ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { ...options, resolveAssets: false })
+            })
+            : work
+    }
+
+    const translateBody = (data: string, request: TranslationRequest) =>
+        withFallbackTimeout(translateHTML(data, false, request.charArg, request.chatID, request.retranslate), 120000, () => null)
 
     const isSameTranslationTarget = (a: TranslationRequest | null, b: TranslationRequest | null) => {
         return !!a && !!b && a.data === b.data && a.chatID === b.chatID && isEqual(a.charArg, b.charArg)
@@ -143,19 +178,22 @@
 
         if(DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting){
             await sleep(100)
-            const translatedData = await translateHTML(request.data, false, request.charArg, request.chatID, request.retranslate)
-            const marked = await ParseMarkdown(translatedData, request.charArg, mode, request.chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
+            const translatedData = await translateBody(request.data, request)
+            if (translatedData === null) { translated = false; retranslate = false; return await parseBody(request.data, request.charArg, mode, request.chatID) }
+            const marked = await parseBody(translatedData, request.charArg, mode, request.chatID)
             transResult = marked
         }
         else if(!DBState.db.legacyTranslation){
-            const marked = await ParseMarkdown(request.data, request.charArg, 'pretranslate', request.chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
-            const translated = await postTranslationParse(await translateHTML(marked, false, request.charArg, request.chatID, request.retranslate))
-            transResult = translated
+            const marked = await parseBody(request.data, request.charArg, 'pretranslate', request.chatID)
+            const translatedData = await translateBody(marked, request)
+            if (translatedData === null) { translated = false; retranslate = false; return await parseBody(request.data, request.charArg, mode, request.chatID) }
+            transResult = await postTranslationParse(translatedData)
         }
         else{
-            const marked = await ParseMarkdown(request.data, request.charArg, mode, request.chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
-            const translated = await translateHTML(marked, false, request.charArg, request.chatID, request.retranslate)
-            transResult = translated
+            const marked = await parseBody(request.data, request.charArg, mode, request.chatID)
+            const translatedData = await translateBody(marked, request)
+            if (translatedData === null) { translated = false; retranslate = false; return marked }
+            transResult = translatedData
         }
 
         setTimeout(() => {
@@ -245,12 +283,13 @@
 
     let shouldRenderRawStreaming = $derived(renderRawStreaming && !translated && !retranslate)
 
-    const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number, requestedRevision: number, tries?:number) => {
+    const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number, requestedRevision: number, key: string, tries?:number) => {
         // track 'translated' and 'retranslate' state
         translated;
         retranslate;
         const preservePendingContent = lastRenderedRevision !== null && requestedRevision !== lastRenderedRevision
         let lastParsedQueue = ''
+        let parsedSuccessfully = false
         let mode = 'notrim' as const
         try {
             if((!isEqual(lastCharArg, charArg)) || (chatID !== lastChatId)){
@@ -264,10 +303,10 @@
                     if(DBState.db.autoTranslate && DBState.db.translator){
                         if(DBState.db.autoTranslateCachedOnly && DBState.db.translatorType === 'llm'){
                             const cache = DBState.db.translateBeforeHTMLFormatting
-                            ? await getLLMCache(data)
+                            ? await withFallbackTimeout(getLLMCache(data), 4000, () => null)
                             : !DBState.db.legacyTranslation
-                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() }))
-                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() }))
+                            ? await withFallbackTimeout(getLLMCache(await parseBody(data, charArg, 'pretranslate', chatID)), 4000, () => null)
+                            : await withFallbackTimeout(getLLMCache(await parseBody(data, charArg, mode, chatID)), 4000, () => null)
                   
                             translateText = cache !== null
                         }
@@ -306,6 +345,7 @@
                     const transResult = await translationFlight
                     if(hasRenderableResult(transResult)){
                         lastParsedQueue = transResult
+                        parsedSuccessfully = true
                     }
                     return transResult
                 }
@@ -313,12 +353,14 @@
                 const transResult = await startTranslationFlight(translationRequest, mode)
                 if(hasRenderableResult(transResult)){
                     lastParsedQueue = transResult
+                    parsedSuccessfully = true
                 }
                 return transResult
             }
             else{
-                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
+                const marked = await parseBody(data, charArg, mode, chatID)
                 lastParsedQueue = marked
+                parsedSuccessfully = true
                 lastCharArg = charArg
                 return marked
             }   
@@ -334,7 +376,7 @@
                 lastParsedQueue = hasRenderableResult(data) ? data : lastParsed
                 return lastParsedQueue
             }
-            const retryResult = await markParsing(data, charArg, chatID, requestedRevision, (tries ?? 0) + 1)
+            const retryResult = await markParsing(data, charArg, chatID, requestedRevision, key, (tries ?? 0) + 1)
             if(hasRenderableResult(retryResult)){
                 lastParsedQueue = retryResult
             }
@@ -342,8 +384,9 @@
         }
         finally{
             //since trimMarkdown is fast, we don't need to cache it
-            if(hasRenderableResult(lastParsedQueue)){
+            if(hasRenderableResult(lastParsedQueue) && key === currentBodyKey()){
                 lastParsed = lastParsedQueue
+                if (parsedSuccessfully && lastParsedQueue !== translationLoadingHTML) putParsedBody(key, lastParsedQueue)
             }
             lastRenderedRevision = requestedRevision
         }
@@ -529,7 +572,42 @@
         rendered.clear()
     })
 
-    let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx, renderRevision))
+    let markParsingResult = $derived.by(() => markParsing(msgDisplay ?? '', character, idx, renderRevision + resumeRevision, currentBodyKey()))
+
+    $effect(() => {
+        if (shouldRenderRawStreaming) return
+        const key = currentBodyKey()
+        const result = markParsingResult
+        const cached = getParsedBody(key)
+        if (cached !== undefined) lastParsed = cached
+        pendingFallback = ''
+        pendingSince = Date.now()
+        const timer = setTimeout(() => {
+            if (pendingSince !== null && !cached && hasRenderableResult(msgDisplay)) {
+                pendingFallback = plainBodyHtml(msgDisplay.replace(/<[^>]*>/g, ' ').replace(/\{\{[^}]*\}\}/g, '').replace(/[ \t]+/g, ' ').trim())
+            }
+        }, 1500)
+        let current = true
+        result.then(() => {
+            if (current) { pendingSince = null; pendingFallback = '' }
+        }, () => {
+            if (current) pendingSince = null
+        })
+        return () => { current = false; clearTimeout(timer); pendingSince = null }
+    })
+
+    onMount(() => {
+        const resume = () => {
+            if (document.visibilityState === 'visible' && pendingBodyNeedsRestart(pendingSince, Date.now())) resumeRevision++
+        }
+        const pageShow = (event: PageTransitionEvent) => { if (event.persisted) resume() }
+        document.addEventListener('visibilitychange', resume)
+        window.addEventListener('pageshow', pageShow)
+        return () => {
+            document.removeEventListener('visibilitychange', resume)
+            window.removeEventListener('pageshow', pageShow)
+        }
+    })
 
     const renderParsed = (root: HTMLElement, parsed: string, shortName: string) => {
         rendered.render(root, untrack(() => addMetadataToElement(trimMarkdown(parsed), shortName)), (nodes) => scopePaneRadios(nodes, root))
@@ -550,7 +628,7 @@
         if(!root) return
         // Until the new HTML is ready, show what the body showed (or the
         // translation spinner markParsing put there), as {#await} did.
-        renderParsed(root, lastParsed, shortName)
+        renderParsed(root, (getParsedBody(currentBodyKey()) ?? pendingFallback) || lastParsed, shortName)
         let current = true
         result.then((md) => {
             if(!current || destroyed) return
@@ -585,7 +663,7 @@
     <span class="whitespace-pre-wrap">{rawStreamingText}</span>
 {:else if !morphBody}
     {#await markParsingResult}
-        {@html addMetadataToElement(trimMarkdown(lastParsed), modelShortName)}
+        {@html addMetadataToElement(trimMarkdown((getParsedBody(currentBodyKey()) ?? pendingFallback) || lastParsed), modelShortName)}
     {:then md}
         {@html addMetadataToElement(trimMarkdown(md), modelShortName)}
     {/await}
