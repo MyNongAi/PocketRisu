@@ -466,24 +466,27 @@
                                 if(chara.chats[chatIdx]?._placeholder){
                                     await ensureChatHydrated(chara.chats, chatIdx, (chara as character).chaId)
                                 }
-                                if(chara.chats[chatIdx]?._placeholder){
+                                if(owner !== chara) return
+                                const hydratedIdx = chatIndexAfterConfirm(chara.chats, target)
+                                if(hydratedIdx < 0) return
+                                if(chara.chats[hydratedIdx]?._placeholder){
                                     alertError('Failed to load chat data.')
                                     return
                                 }
-                                const copied = copyableChat(chara.chats[chatIdx])
-                                const newChat = reissueMessageIds(copied.chat, chara.chats[chatIdx].message.map(m => m.chatId))
+                                const copied = copyableChat(chara.chats[hydratedIdx])
+                                const newChat = reissueMessageIds(copied.chat, chara.chats[hydratedIdx].message.map(m => m.chatId))
                                 newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
                                 newChat.lastDate = Date.now()
-                                newChat.folderId = folderForChatCopy(chara, chara.chats[chatIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)
+                                newChat.folderId = folderForChatCopy(chara, chara.chats[hydratedIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)
                                 // The unsent text in the input goes along (the user's request, 2026-10-10);
                                 // before a send pushes its input, that input goes too.
                                 if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
-                                else copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)
+                                else copyChatDraft((chara as character).chaId, chara.chats[hydratedIdx].id, newChat.id)
                                 // Right under the chat it copies, not at the top (the user's request, 2026-10-19).
-                                chara.chats.splice(chatIdx + 1, 0, newChat)
-                                changeChatTo(chatIdx + 1)
+                                chara.chats.splice(hydratedIdx + 1, 0, newChat)
+                                changeChatTo(hydratedIdx + 1)
                                 chara.chats = chara.chats
                                 void requestImmediateSave()
                                 notifySuccess(language.copyChatSuccess)
@@ -573,24 +576,27 @@
                         if(chara.chats[i]?._placeholder){
                             await ensureChatHydrated(chara.chats, i, (chara as character).chaId)
                         }
-                        if(chara.chats[i]?._placeholder){
+                        if(owner !== chara) return
+                        const hydratedIdx = chatIndexAfterConfirm(chara.chats, target)
+                        if(hydratedIdx < 0) return
+                        if(chara.chats[hydratedIdx]?._placeholder){
                             alertError('Failed to load chat data.')
                             return
                         }
-                        const copied = copyableChat(chara.chats[i])
-                        const newChat = reissueMessageIds(copied.chat, chara.chats[i].message.map(m => m.chatId))
+                        const copied = copyableChat(chara.chats[hydratedIdx])
+                        const newChat = reissueMessageIds(copied.chat, chara.chats[hydratedIdx].message.map(m => m.chatId))
                         newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
                                 newChat.lastDate = Date.now()
-                        newChat.folderId = folderForChatCopy(chara, chara.chats[i], newChat.message.length, DBState.db.createFolderOnBranch, v4)
+                        newChat.folderId = folderForChatCopy(chara, chara.chats[hydratedIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)
                         // The unsent text in the input goes along (the user's request, 2026-10-10);
                         // before a send pushes its input, that input goes too.
                         if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
-                        else copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)
+                        else copyChatDraft((chara as character).chaId, chara.chats[hydratedIdx].id, newChat.id)
                         // Right under the chat it copies, not at the top (the user's request, 2026-10-19).
-                        chara.chats.splice(i + 1, 0, newChat)
-                        changeChatTo(i + 1)
+                        chara.chats.splice(hydratedIdx + 1, 0, newChat)
+                        changeChatTo(hydratedIdx + 1)
                         chara.chats = chara.chats
                         void requestImmediateSave()
                         notifySuccess(language.copyChatSuccess)

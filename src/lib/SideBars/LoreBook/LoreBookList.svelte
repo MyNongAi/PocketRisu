@@ -11,6 +11,7 @@
     import { buildCharacterLoreComparisonStatuses, type LoreComparisonStatus } from "src/ts/gui/loreBookComparison";
     import { loreBookMatches, loreSearchNeedle } from "src/ts/gui/loreBookSearch";
     import { language } from "src/lang";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
 
     let reinitializeSortable = false;
 
@@ -395,28 +396,32 @@
                         isLastInContainer={book === lastVisibleItem}
                         comparisonStatus={resolvedComparisonStatuses.get(book)}
                         comparisonStatuses={resolvedComparisonStatuses}
-                        onRemove={() => {
-                            if (openedRefs.has(book)) {
-                                onClose(book.mode !== 'folder', book)
+                        onRemove={(removed) => {
+                            // QUESTION-TARGET-AFTER-TUCK (2026-11-25): the entry the user confirmed, not the row now at this index.
+                            const target = removed ?? book
+                            const owner = DBState.db.loreBook.find(preset => preset.data.includes(target))
+                            const lore = owner?.data
+                            const at = itemIndexAfterConfirm(lore, target)
+                            if (at < 0 || !owner) return
+                            if (openedRefs.has(target)) {
+                                onClose(target.mode !== 'folder', target)
                             }
 
-                            let lore = DBState.db.loreBook[DBState.db.loreBookPage].data
-
-                            if (book.mode === 'folder') {
+                            if (target.mode === 'folder') {
                                 lore.forEach(item => {
-                                    if (item.folder === book.key && openedRefs.has(item)) {
+                                    if (item.folder === target.key && openedRefs.has(item)) {
                                         onClose(true, item)
                                     }
                                 })
 
-                                lore = lore.filter(item =>
-                                    item !== book && item.folder !== book.key
+                                owner.data = lore.filter(item =>
+                                    item !== target && item.folder !== target.key
                                 )
                             } else {
-                                lore.splice(i, 1)
+                                lore.splice(at, 1)
                             }
 
-                            DBState.db.loreBook[DBState.db.loreBookPage].data = lore
+                            if (target.mode !== 'folder') owner.data = lore
                         }}
                         onOpen={(isDetail = true) => onOpen(isDetail, book)}
                         onClose={(isDetail = true) => onClose(isDetail, book)}
@@ -444,23 +449,26 @@
                         isLastInContainer={book === lastVisibleItem}
                         comparisonStatus={resolvedComparisonStatuses.get(book)}
                         comparisonStatuses={resolvedComparisonStatuses}
-                        onRemove={() => {
+                        onRemove={(removed) => {
+                            // QUESTION-TARGET-AFTER-TUCK (2026-11-25): the entry the user confirmed, not the row now at this index.
+                            const target = removed ?? book
+                            const lore = externalLoreBooks
+                            const at = itemIndexAfterConfirm(lore, target)
+                            if (at < 0) return
                             // isDetail must use the same basis as the open side
                             // (LoreBookData passes value.mode !== 'folder'). Keying it
-                            // off book.folder — the parent folder key — leaked the
+                            // off target.folder — the parent folder key — leaked the
                             // counter for lore inside a folder and drove it negative
                             // for an open top-level folder.
-                            if (openedRefs.has(book)) {
-                                onClose(book.mode !== 'folder', book)
+                            if (openedRefs.has(target)) {
+                                onClose(target.mode !== 'folder', target)
                             }
                             
-                            const lore = externalLoreBooks
-
                             // When deleting a folder, also delete all items that belong to that folder
-                            if (book.mode === 'folder') {
+                            if (target.mode === 'folder') {
                                 // Close items belonging to the folder if they are open
                                 lore.forEach(item => {
-                                    if (item.folder === book.key && openedRefs.has(item)) {
+                                    if (item.folder === target.key && openedRefs.has(item)) {
                                         onClose(true, item)
                                     }
                                 })
@@ -469,12 +477,12 @@
                                 // $bindable, so reassigning it here would drop the deletion on the
                                 // floor and the folder would come back on re-entry.
                                 const kept = lore.filter(item =>
-                                    item !== book && item.folder !== book.key
+                                    item !== target && item.folder !== target.key
                                 )
                                 lore.splice(0, lore.length, ...kept)
                             } else {
                                 // Delete regular item
-                                lore.splice(i, 1)
+                                lore.splice(at, 1)
                             }
                         }}
                         onOpen={(isDetail = true) => onOpen(isDetail, book)}
@@ -503,37 +511,41 @@
                         isLastInContainer={book === lastVisibleItem}
                         comparisonStatus={resolvedComparisonStatuses.get(book)}
                         comparisonStatuses={resolvedComparisonStatuses}
-                        onRemove={() => {
+                        onRemove={(removed) => {
+                            // QUESTION-TARGET-AFTER-TUCK (2026-11-25): the entry the user confirmed, not the row now at this index.
+                            const target = removed ?? book
+                            const owner = DBState.db.characters.find(char => char?.globalLore?.includes(target))
+                            const lore = owner?.globalLore
+                            const at = itemIndexAfterConfirm(lore, target)
+                            if (at < 0 || !owner) return
                             // isDetail must use the same basis as the open side
                             // (LoreBookData passes value.mode !== 'folder'). Keying it
-                            // off book.folder — the parent folder key — leaked the
+                            // off target.folder — the parent folder key — leaked the
                             // counter for lore inside a folder and drove it negative
                             // for an open top-level folder.
-                            if (openedRefs.has(book)) {
-                                onClose(book.mode !== 'folder', book)
+                            if (openedRefs.has(target)) {
+                                onClose(target.mode !== 'folder', target)
                             }
                             
-                            let lore  = DBState.db.characters[$selectedCharID].globalLore
-                            
                             // When deleting a folder, also delete all items that belong to that folder
-                            if (book.mode === 'folder') {
+                            if (target.mode === 'folder') {
                                 // Close items belonging to the folder if they are open
                                 lore.forEach(item => {
-                                    if (item.folder === book.key && openedRefs.has(item)) {
+                                    if (item.folder === target.key && openedRefs.has(item)) {
                                         onClose(true, item)
                                     }
                                 })
                                 
                                 // Filter out the folder and all items belonging to it
-                                lore = lore.filter(item => 
-                                    item !== book && item.folder !== book.key
+                                owner.globalLore = lore.filter(item =>
+                                    item !== target && item.folder !== target.key
                                 )
                             } else {
                                 // Delete regular item
-                                lore.splice(i, 1)
+                                lore.splice(at, 1)
                             }
                             
-                            DBState.db.characters[$selectedCharID].globalLore = lore
+                            if (target.mode !== 'folder') owner.globalLore = lore
                         }} 
                         onOpen={(isDetail = true) => onOpen(isDetail, book)}
                         onClose={(isDetail = true) => onClose(isDetail, book)}
@@ -561,37 +573,41 @@
                         isLastInContainer={book === lastVisibleItem}
                         comparisonStatus={resolvedComparisonStatuses.get(book)}
                         comparisonStatuses={resolvedComparisonStatuses}
-                        onRemove={() => {
+                        onRemove={(removed) => {
+                            // QUESTION-TARGET-AFTER-TUCK (2026-11-25): the entry the user confirmed, not the row now at this index.
+                            const target = removed ?? book
+                            const owner = DBState.db.characters.flatMap(char => char?.chats ?? []).find(chat => chat?.localLore?.includes(target))
+                            const lore = owner?.localLore
+                            const at = itemIndexAfterConfirm(lore, target)
+                            if (at < 0 || !owner) return
                             // isDetail must use the same basis as the open side
                             // (LoreBookData passes value.mode !== 'folder'). Keying it
-                            // off book.folder — the parent folder key — leaked the
+                            // off target.folder — the parent folder key — leaked the
                             // counter for lore inside a folder and drove it negative
                             // for an open top-level folder.
-                            if (openedRefs.has(book)) {
-                                onClose(book.mode !== 'folder', book)
+                            if (openedRefs.has(target)) {
+                                onClose(target.mode !== 'folder', target)
                             }
                             
-                            let lore  = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore
-                            
                             // When deleting a folder, also delete all items that belong to that folder
-                            if (book.mode === 'folder') {
+                            if (target.mode === 'folder') {
                                 // Close items belonging to the folder if they are open
                                 lore.forEach(item => {
-                                    if (item.folder === book.key && openedRefs.has(item)) {
+                                    if (item.folder === target.key && openedRefs.has(item)) {
                                         onClose(true, item)
                                     }
                                 })
                                 
                                 // Filter out the folder and all items belonging to it
-                                lore = lore.filter(item => 
-                                    item !== book && item.folder !== book.key
+                                owner.localLore = lore.filter(item =>
+                                    item !== target && item.folder !== target.key
                                 )
                             } else {
                                 // Delete regular item
-                                lore.splice(i, 1)
+                                lore.splice(at, 1)
                             }
                             
-                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore = lore
+                            if (target.mode !== 'folder') owner.localLore = lore
                         }} 
                         onOpen={(isDetail = true) => onOpen(isDetail, book)}
                         onClose={(isDetail = true) => onClose(isDetail, book)}

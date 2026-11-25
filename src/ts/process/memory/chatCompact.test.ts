@@ -98,4 +98,35 @@ describe('manual chat compact', () => {
         expect(await compactChat(char, syntheticChat(6), 'count', 6, '', d)).toBe('empty');
         expect(d.summarize).not.toHaveBeenCalled();
     });
+
+    it('appends later chunks to a replacement chat with the same id', async () => {
+        const original = syntheticChat(7);
+        original.id = 'chat';
+        let live: Chat = original;
+        let calls = 0;
+        const d = deps();
+        d.summarize.mockImplementation(async () => {
+            if (++calls === 2) live = { ...original, message: [...original.message], hypaV3Data: { summaries: [
+                ...original.hypaV3Data!.summaries, { text: 'remote', chatMemos: [], isImportant: false },
+            ] } };
+            return `summary ${calls}`;
+        });
+        await compactChat(char, original, 'count', 0, '', { ...d, liveChat: () => live });
+        expect(original.hypaV3Data?.summaries.map(s => s.text)).toEqual(['summary 1']);
+        expect(live.hypaV3Data?.summaries.map(s => s.text)).toEqual(['summary 1', 'remote', 'summary 2', 'summary 3']);
+    });
+
+    it('stops without another write when the live chat disappears', async () => {
+        const original = syntheticChat(7);
+        let live: Chat | null = original;
+        let calls = 0;
+        const d = deps();
+        d.summarize.mockImplementation(async () => {
+            if (++calls === 2) live = null;
+            return `summary ${calls}`;
+        });
+        await expect(compactChat(char, original, 'count', 0, '', { ...d, liveChat: () => live }))
+            .rejects.toThrow('The chat changed while compacting; nothing more was saved.');
+        expect(original.hypaV3Data?.summaries.map(s => s.text)).toEqual(['summary 1']);
+    });
 });

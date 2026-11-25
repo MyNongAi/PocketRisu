@@ -10,6 +10,7 @@
     import { updateGuisize } from "src/ts/gui/guisize";
     import ShSortableList from "../UI/GUI/ShSortableList.svelte";
     import ShButton from "../UI/GUI/ShButton.svelte";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
 
     let editMode = $state(false)
 
@@ -95,10 +96,12 @@
                         }
                         const d = await alertConfirm(`${language.removeConfirm}${preset.name}`)
                         if(d){
+                            const at = itemIndexAfterConfirm(DBState.db.themePresets, preset)
+                            if(at < 0 || DBState.db.themePresets.length === 1) return
                             changeToThemePreset(0)
                             applyThemeVisuals()
                             let themePresets = DBState.db.themePresets
-                            themePresets.splice(i, 1)
+                            themePresets.splice(at, 1)
                             DBState.db.themePresets = themePresets
                             changeToThemePreset(0, false)
                             applyThemeVisuals()

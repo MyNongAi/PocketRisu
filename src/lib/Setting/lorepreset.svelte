@@ -5,6 +5,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from "@lucide/svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     let editMode = $state(false)
     /** @type {{close?: any}} */
     let { close = () => {} } = $props();
@@ -39,9 +40,11 @@
                         }
                         const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
                         if(d){
+                            const at = itemIndexAfterConfirm(DBState.db.loreBook, lore)
+                            if(at < 0 || DBState.db.loreBook.length === 1) return
                             DBState.db.loreBookPage = 0
                             let loreBook = DBState.db.loreBook
-                            loreBook.splice(ind, 1)
+                            loreBook.splice(at, 1)
                             DBState.db.loreBook = loreBook
                         }
                     }} onkeydown={(e) => {

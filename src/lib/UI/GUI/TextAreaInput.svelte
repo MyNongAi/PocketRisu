@@ -343,11 +343,12 @@
     }
     async function makeKorean() {
         if (!koView) return false
+        const { owner, key } = koView
         koBusy = true
         try {
             const source = value ?? ''
             const text = await translateKoView(source)
-            setKoEntry(koView.owner, koView.key, { text, src: fingerprint(source) })
+            setKoEntry(owner, key, { text, src: fingerprint(source) })
             return true
         } catch (error) {
             notifyError(error instanceof Error && error.message === 'translator-none' ? language.koViewPickTranslator : language.koViewFailed)

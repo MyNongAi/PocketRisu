@@ -478,6 +478,12 @@
     }
 
     async function moveItemToFolder(index: number) {
+        // QUESTION-TARGET-AFTER-TUCK (2026-11-25): rows carry no id here. The
+        // index stands when the list did not change while the question waited;
+        // after a change only a row whose text is unique is found again.
+        const before = itemSearchTexts.slice();
+        const targetText = before[index];
+        if (targetText === undefined) return;
         // Uncategorized first, then the folders (the user's request, 2026-10-05),
         // each followed by the ones shown inside it.
         const tree = folderTree(folders);
@@ -485,10 +491,14 @@
         const sel = parseInt(await alertSelect(options));
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
         const folderId = sel === 0 ? undefined : tree[sel - 1].folder.id;
-        const placements = placementsFromData().filter(p => p.index !== index);
+        const unchanged = itemSearchTexts.length === before.length && itemSearchTexts.every((text, at) => text === before[at]);
+        const currentIndex = unchanged ? index : itemSearchTexts.indexOf(targetText);
+        if (currentIndex < 0 || !unchanged && itemSearchTexts.lastIndexOf(targetText) !== currentIndex) return;
+        if (folderId && !folders.some(folder => folder.id === folderId)) return;
+        const placements = placementsFromData().filter(p => p.index !== currentIndex);
         // Append at the end of the chosen group.
         const lastInGroup = placements.map(p => p.folderId).lastIndexOf(folderId);
-        placements.splice(lastInGroup + 1, 0, { index, folderId });
+        placements.splice(lastInGroup + 1, 0, { index: currentIndex, folderId });
         onItemsChange(placements);
     }
 

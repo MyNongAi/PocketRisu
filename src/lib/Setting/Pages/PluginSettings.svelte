@@ -7,6 +7,7 @@
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import { alertConfirm, alertError, alertMd, alertSelect, notifySuccess } from "src/ts/alert";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     import { TriangleAlert } from '@lucide/svelte';
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
 
@@ -77,10 +78,12 @@
         const plugin = DBState.db.plugins[index]
         if (!plugin) return
         if (!await alertConfirm(language.removeConfirm + (plugin.displayName ?? plugin.name))) return
+        const at = itemIndexAfterConfirm(DBState.db.plugins, plugin, item => item.name)
+        if (at < 0) return
         if (DBState.db.currentPluginProvider === plugin.name) {
             DBState.db.currentPluginProvider = "";
         }
-        DBState.db.plugins = (DBState.db.plugins ?? []).filter((_, i) => i !== index)
+        DBState.db.plugins = (DBState.db.plugins ?? []).filter((_, i) => i !== at)
         loadPlugins()
         void requestImmediateSave()
     }

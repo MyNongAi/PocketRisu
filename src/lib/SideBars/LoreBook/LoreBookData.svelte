@@ -24,7 +24,7 @@
 
     interface Props {
         value: loreBook;
-        onRemove?: () => void;
+        onRemove?: (target: loreBook) => void;
         onClose?: (isDetail?: boolean) => void;
         onOpen?: (isDetail?: boolean) => void;
         idx: number;
@@ -256,8 +256,10 @@
         {/snippet}
         </ShContextMenu>
         <button class="valuer" onclick={async () => {
+            // QUESTION-TARGET-AFTER-TUCK (2026-11-25): `value` follows the row index while a question waits.
+            const target = value;
             let shouldRemove = true;
-            if (value.mode === 'folder' && externalLoreBooks.some(e => e.folder === value.key)) {
+            if (target.mode === 'folder' && externalLoreBooks.some(e => e.folder === target.key)) {
                 const firstConfirm = await alertConfirm(language.folderRemoveConfirm);
                 if (!firstConfirm) {
                     shouldRemove = false;
@@ -265,13 +267,13 @@
             }
 
             if (shouldRemove) {
-                const secondConfirm = await alertConfirm(language.removeConfirm + (value.comment || 'Unnamed Folder'));
+                const secondConfirm = await alertConfirm(language.removeConfirm + (target.comment || 'Unnamed Folder'));
                 if (secondConfirm) {
                     // onRemove in LoreBookList already closes the entry when it is
                     // open; closing a closed one here drove openedDetails negative
                     // and permanently killed drag reordering.
-                    deactivateLocally(value);
-                    onRemove();
+                    deactivateLocally(target);
+                    onRemove(target);
                 }
             }
         }}>
@@ -283,9 +285,10 @@
             <span>{getParentLoreName(value)}</span>
         </button>
         <button class="valuer" onclick={async () => {
-            const d = await alertConfirm(language.removeConfirm + getParentLoreName(value))
+            const target = value
+            const d = await alertConfirm(language.removeConfirm + getParentLoreName(target))
             if(d){
-                onRemove()
+                onRemove(target)
             }
         }}>
             <XIcon size={20} />

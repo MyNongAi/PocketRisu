@@ -12,6 +12,7 @@
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { changeChatTo, requestImmediateSave } from "src/ts/globalApi.svelte";
     import { v4 } from "uuid";
+    import { chatIndexAfterConfirm } from "src/ts/gui/afterConfirm";
 
     let editMode = $state(false)
     /** @type {{close?: any}} */
@@ -55,12 +56,19 @@
                             notifyError(language.errors.onlyOneChat)
                             return
                         }
-                        const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-                        if(d){
+                        const owner = DBState.db.characters[$selectedCharID]
+                        const ownerId = owner.chaId
+                        const target = chat
+                        const d = await alertConfirm(`${language.removeConfirm}${target.name}`)
+                        // QUESTION-TARGET-AFTER-TUCK (2026-11-25)
+                        const currentOwner = DBState.db.characters[$selectedCharID]
+                        if(d && currentOwner?.chaId === ownerId){
+                            const at = chatIndexAfterConfirm(currentOwner.chats, target)
+                            if(at < 0 || currentOwner.chats.length === 1) return
                             changeChatTo(0)
-                            let chats = DBState.db.characters[$selectedCharID].chats
-                            chats.splice(i, 1)
-                            DBState.db.characters[$selectedCharID].chats = chats
+                            let chats = currentOwner.chats
+                            chats.splice(at, 1)
+                            currentOwner.chats = chats
                             void requestImmediateSave()
                         }
                     }} onkeydown={() => {

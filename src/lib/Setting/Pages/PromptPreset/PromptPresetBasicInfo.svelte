@@ -3,6 +3,7 @@
     import { language } from "src/lang";
     import { DBState } from "src/ts/stores.svelte";
     import { alertConfirm, notifyError, notifySuccess } from "src/ts/alert";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     import {
         changeToPreset,
         copyPreset,
@@ -69,14 +70,17 @@
             notifyError(language.errors.onlyOnePreset);
             return;
         }
-        const presetName = DBState.db.botPresets[activeIndex]?.name ?? '';
+        const preset = DBState.db.botPresets[activeIndex];
+        if (!preset) return;
+        const presetName = preset.name;
         const ok = await alertConfirm(`${language.presetDeleteConfirm}\n${presetName}`);
         if (!ok) return;
+        const removing = itemIndexAfterConfirm(DBState.db.botPresets, preset, item => item.id);
+        if (removing < 0 || DBState.db.botPresets.length <= 1) return;
 
         // Flush in-flight edits into the active preset BEFORE mutating the array
         // (mirrors botpreset.svelte:217-235 deletion handling).
         saveCurrentPreset();
-        const removing = activeIndex;
         const removingActive = removing === DBState.db.botPresetsId;
         withStableActivePreset(() => {
             const presets = DBState.db.botPresets;

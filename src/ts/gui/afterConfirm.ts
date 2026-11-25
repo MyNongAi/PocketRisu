@@ -3,9 +3,19 @@
 // change meanwhile (a new or deleted chat, a reply, the other split pane
 // choosing another chat), so an index kept from the click named a neighbour:
 // a delete removed the wrong message or chat (2026-10-22 split review).
+// QUESTION-TARGET-AFTER-TUCK (2026-11-25) sweeps the remaining tucked-question targets.
 
 type MessageLike = { chatId?: string }
 type ChatLike = { id?: string, message?: MessageLike[] }
+
+/** Where `target` is now in `list`: the same object, else the first item with the same key (when `keyOf` gives one); -1 when gone. */
+export function itemIndexAfterConfirm<T>(list: readonly (T | null | undefined)[] | null | undefined, target: T, keyOf?: (item: T) => string | number | null | undefined): number {
+    if (!list) return -1
+    const at = list.indexOf(target)
+    if (at >= 0) return at
+    const key = keyOf?.(target)
+    return key === '' || key === null || key === undefined ? -1 : list.findIndex(item => item != null && keyOf!(item) === key)
+}
 
 /**
  * Where `target`, a message of `ownerChat` when the click happened, is now in

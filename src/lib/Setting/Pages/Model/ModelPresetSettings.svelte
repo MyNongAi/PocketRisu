@@ -22,6 +22,7 @@
     import { language } from "src/lang";
     import { DBState, openModelProfileBrowser, modelProfileReplaceTarget, openModelPresetEditId, ModelPresetListTabIndex } from "src/ts/stores.svelte";
     import { alertConfirm, alertError, notifySuccess } from "src/ts/alert";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     import { hasYumiPlugin, importFromYumi } from "src/ts/preset/yumiImportApply";
     import { testModelPreset, type ModelPresetTestResult } from "src/ts/process/request/request";
     import { getOfficialRegistry, getPresetUpdateStatus, syncRemoteRegistry } from "src/ts/preset/registry";
@@ -134,8 +135,10 @@
         if (!preset) return;
         const ok = await alertConfirm(`${language.removeConfirm}${preset.name}`);
         if (!ok) return;
+        const at = itemIndexAfterConfirm(DBState.db.modelPresets, preset, item => item.id);
+        if (at < 0) return;
         const next = [...DBState.db.modelPresets];
-        next.splice(index, 1);
+        next.splice(at, 1);
         DBState.db.modelPresets = next;
         notifySuccess(language.presetDeleted);
     }

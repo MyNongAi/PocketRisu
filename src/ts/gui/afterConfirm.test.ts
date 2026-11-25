@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { chatIndexAfterConfirm, messageIndexAfterConfirm } from './afterConfirm'
+import { chatIndexAfterConfirm, itemIndexAfterConfirm, messageIndexAfterConfirm } from './afterConfirm'
+
+describe('itemIndexAfterConfirm', () => {
+    it('follows the same object when moved', () => {
+        const target = { id: 'b' }
+        expect(itemIndexAfterConfirm([{ id: 'a' }, target], target, item => item.id)).toBe(1)
+    })
+    it('finds a replaced object by key', () => {
+        expect(itemIndexAfterConfirm([{ id: 'b' }], { id: 'b' }, item => item.id)).toBe(0)
+    })
+    it('does not find a removed object', () => {
+        expect(itemIndexAfterConfirm([{ id: 'a' }], { id: 'b' }, item => item.id)).toBe(-1)
+    })
+    it('never matches an empty key', () => {
+        expect(itemIndexAfterConfirm([{ id: '' }], { id: '' }, item => item.id)).toBe(-1)
+    })
+    it('returns -1 for a null list', () => {
+        expect(itemIndexAfterConfirm(null, { id: 'b' }, item => item.id)).toBe(-1)
+    })
+})
 
 const message = (chatId: string) => ({ chatId, role: 'user', data: chatId })
 

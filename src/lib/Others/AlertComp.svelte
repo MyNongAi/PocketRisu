@@ -1,6 +1,7 @@
 <script lang="ts">
     import { alertGenerationInfoStore } from "../../ts/alert";
     import { alertSelectLines } from "src/ts/gui/alertSelectLines";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from '../../ts/characters';
@@ -1014,10 +1015,12 @@
                                              the list but is occluded by the confirm popups it triggers. -->
                                         <ShDropdownMenuContent class="z-[45] min-w-40" align="end">
                                             <ShDropdownMenuItem onSelect={async () => {
-                                                const idx = i
-                                                const presetName = DBState.db.togglePresets![idx].name
+                                                const target = preset
+                                                const presetName = target.name
                                                 const confirmed = await alertConfirm((language.togglePresetOverwriteConfirm as any)(presetName))
                                                 if (confirmed) {
+                                                    const idx = itemIndexAfterConfirm(DBState.db.togglePresets, target)
+                                                    if (idx < 0) return
                                                     const promptPreset = DBState.db.botPresets[DBState.db.botPresetsId]
                                                     DBState.db.togglePresets![idx].values = snapshotCurrentToggleValues()
                                                     DBState.db.togglePresets![idx].promptPresetName = promptPreset?.name
@@ -1029,10 +1032,12 @@
                                                 {language.togglePresetMenuOverwrite}
                                             </ShDropdownMenuItem>
                                             <ShDropdownMenuItem onSelect={async () => {
-                                                const idx = i
-                                                const oldName = DBState.db.togglePresets![idx].name
+                                                const target = preset
+                                                const oldName = target.name
                                                 const name = await alertInput(language.togglePresetRename, [], oldName)
                                                 if (name && name !== oldName) {
+                                                    const idx = itemIndexAfterConfirm(DBState.db.togglePresets, target)
+                                                    if (idx < 0) return
                                                     DBState.db.togglePresets![idx].name = name
                                                     DBState.db.togglePresets = [...DBState.db.togglePresets!]
                                                     notifySuccess((language.togglePresetRenamed as any)(oldName, name))
@@ -1061,10 +1066,12 @@
                                             </ShDropdownMenuItem>
                                             <ShDropdownMenuSeparator />
                                             <ShDropdownMenuItem variant="destructive" onSelect={async () => {
-                                                const idx = i
-                                                const presetName = DBState.db.togglePresets![idx].name
+                                                const target = preset
+                                                const presetName = target.name
                                                 const confirmed = await alertConfirm((language.togglePresetDeleteConfirm as any)(presetName))
                                                 if (confirmed) {
+                                                    const idx = itemIndexAfterConfirm(DBState.db.togglePresets, target)
+                                                    if (idx < 0) return
                                                     DBState.db.togglePresets!.splice(idx, 1)
                                                     DBState.db.togglePresets = [...DBState.db.togglePresets!]
                                                     notifySuccess((language.togglePresetDeleted as any)(presetName))

@@ -1583,12 +1583,20 @@
     {/if}
 
     <button class="flex items-center hover:text-primary transition-colors" onclick={async () => {
+        const owner = DBState.db.characters[view.characterIndex]
+        const targetChat = owner?.chats[view.chatIndex]
+        const targetMessage = targetChat?.message[idx]
+        if (!owner || !targetChat || !targetMessage) return
         await sleep(1)
-        const currentChat = DBState.db.characters[view.characterIndex].chats[view.chatIndex]
+        const currentOwner = DBState.db.characters[view.characterIndex]
+        const currentChat = currentOwner?.chats[view.chatIndex]
+        if (currentOwner?.chaId !== owner.chaId || !currentChat) return
+        const at = messageIndexAfterConfirm(currentChat, targetChat, targetMessage)
+        if (at < 0) return
 
-        const folderId = folderForChatCopy(DBState.db.characters[view.characterIndex], currentChat, idx + 1, DBState.db.createFolderOnBranch, v4)
+        const folderId = folderForChatCopy(currentOwner, currentChat, at + 1, DBState.db.createFolderOnBranch, v4)
         
-        const currentMessage = currentChat.message[idx]
+        const currentMessage = currentChat.message[at]
         // Branched while the chat streams: the branch itself is not being answered.
         const newChat = clearReplyInProgress($state.snapshot(currentChat))
         newChat.folderId = folderId
@@ -1596,7 +1604,7 @@
         newChat.id = v4()
         // CHAT-LIST-RECENT (2026-11-22): a branch is new now, regardless of its source.
         newChat.lastDate = Date.now()
-        newChat.message = newChat.message.slice(0, idx + 1)
+        newChat.message = newChat.message.slice(0, at + 1)
         // Own message ids for the branch; drops summaries/bookmarks that point past the cut
         reissueMessageIds(newChat, currentChat.message.map(m => m.chatId))
         newChat.message.push({
@@ -1607,7 +1615,7 @@
             chatId: v4(),
         })
 
-        DBState.db.characters[view.characterIndex].chats.unshift(newChat)
+        currentOwner.chats.unshift(newChat)
         changeChatTo(0)
     }}>
         <SplitIcon size={20}/>

@@ -1,5 +1,5 @@
 // CHAT-COMPACT (2026-11-23): manual HypaV3 compaction keeps the conversation intact.
-import type { Chat, Message, character } from 'src/ts/storage/database.svelte';
+import { getDatabase, type Chat, type Message, type character } from 'src/ts/storage/database.svelte';
 import type { OpenAIChat } from '../index.svelte';
 import { getCurrentHypaV3Preset, summarize } from './hypav3';
 import { hypaV3ProgressStore } from 'src/ts/stores.svelte';
@@ -46,6 +46,7 @@ export function compactModelKeep(answer: string, windowSize: number, fallback: n
 export interface CompactDependencies {
     summarize: typeof summarize;
     progress: typeof hypaV3ProgressStore.set;
+    liveChat?: () => Chat | null | undefined;
 }
 
 const liveDependencies: CompactDependencies = {
@@ -63,6 +64,16 @@ export async function compactChat(
 ): Promise<'done' | 'empty'> {
     const settings = getCurrentHypaV3Preset(char, chat).settings;
     const messages = chat.message;
+    const liveChat = dependencies.liveChat ?? (() => {
+        if (!char.chaId || !chat.id) return chat;
+        const owner = getDatabase().characters.find(candidate => candidate?.chaId === char.chaId);
+        return owner?.chats.find(candidate => candidate?.id === chat.id);
+    });
+    const currentChat = () => {
+        const current = liveChat();
+        if (!current) throw new Error('The chat changed while compacting; nothing more was saved.');
+        return current;
+    };
     let keep = compactKeepCount(configuredKeep);
     if (messages.length <= keep) return 'empty';
     const covered = compactCoveredEnd(messages, chat.hypaV3Data?.summaries ?? []);
@@ -82,11 +93,11 @@ export async function compactChat(
         } catch {
             // The configured count is the fallback for a failed scene decision.
         }
+        currentChat();
     }
     const end = Math.max(covered, messages.length - keep);
     if (end <= covered) return 'empty';
 
-    const summaries = chat.hypaV3Data?.summaries ?? [];
     const chunkSize = Math.max(1, Math.floor(settings.maxChatsPerSummary));
     const limiter = new TaskRateLimiter({
         tasksPerMinute: settings.summarizationModel === 'subModel'
@@ -104,10 +115,14 @@ export async function compactChat(
         try {
             const result = await limiter.executeTask(() => dependencies.summarize(input, false,
                 { currentChar: char, currentChat: chat }, { focusNote }));
+            const live = currentChat();
             if (!result.success) throw result.error;
+            const ids = new Set(live.message.map(message => message.chatId));
+            if (chunk.some(message => !ids.has(message.chatId))) throw new Error('The chat changed while compacting; nothing more was saved.');
             const text = result.data!;
-            summaries.push({ text, chatMemos: chunk.map(message => message.chatId!), isImportant: false, tags: [] });
-            chat.hypaV3Data = { ...chat.hypaV3Data, summaries };
+            const summaries = [...(live.hypaV3Data?.summaries ?? []),
+                { text, chatMemos: chunk.map(message => message.chatId!), isImportant: false, tags: [] }];
+            live.hypaV3Data = { ...live.hypaV3Data, summaries };
         } finally {
             dependencies.progress({ open: false, msg: '', subMsg: '', miniMsg: '' });
         }

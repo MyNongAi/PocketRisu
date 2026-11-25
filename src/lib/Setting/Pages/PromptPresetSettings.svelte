@@ -11,6 +11,7 @@
     import { tooltip } from "src/ts/gui/tooltip";
     import { language } from "src/lang";
     import { alertConfirm, notifyError, notifySuccess } from "src/ts/alert";
+    import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     import { DBState, PromptPresetEditorOpen, PromptPresetSubmenuIndex } from "src/ts/stores.svelte";
     import { changeToPreset, copyPreset, downloadPreset, getActiveBotPreset, importPreset, saveCurrentPreset, withStableActivePreset } from "src/ts/storage/database.svelte";
     import { prebuiltPresets } from "src/ts/process/templates/templates";
@@ -146,11 +147,13 @@
             return
         }
         if (!await alertConfirm(`${language.removeConfirm}${preset.name}`)) return
+        const at = itemIndexAfterConfirm(DBState.db.botPresets, preset, item => item.id)
+        if (at < 0 || DBState.db.botPresets.length <= 1) return
         // Flush in-flight top-level edits into the active preset before mutating the array.
         saveCurrentPreset()
-        const removingActive = index === DBState.db.botPresetsId
+        const removingActive = at === DBState.db.botPresetsId
         withStableActivePreset(() => {
-            DBState.db.botPresets = DBState.db.botPresets.filter((_, i) => i !== index)
+            DBState.db.botPresets = DBState.db.botPresets.filter((_, i) => i !== at)
         })
         if (removingActive) changeToPreset(0, false)
         notifySuccess(language.presetDeleted)

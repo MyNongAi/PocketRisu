@@ -1661,6 +1661,38 @@
       ]
     },
     {
+      "id": "QUESTION-TARGET-AFTER-TUCK",
+      "title": "접어 둔 질문의 대상을 답할 때 다시 찾기",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/gui/afterConfirm.ts",
+        "src/lib/Others/ChatList.svelte",
+        "src/lib/SideBars/SideChatList.svelte",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/Setting/Pages/PluginSettings.svelte",
+        "src/lib/Setting/Pages/PromptPresetSettings.svelte",
+        "src/lib/Setting/Pages/PromptPreset/PromptPresetBasicInfo.svelte",
+        "src/lib/Setting/Pages/Model/ModelPresetSettings.svelte",
+        "src/lib/Setting/lorepreset.svelte",
+        "src/lib/Setting/themepreset.svelte",
+        "src/lib/Others/AlertComp.svelte",
+        "src/lib/SideBars/LoreBook/LoreBookList.svelte",
+        "src/lib/UI/FolderedList.svelte",
+        "src/lib/Others/HypaV3Modal/modal-summary-item.svelte",
+        "src/lib/UI/GUI/TextAreaInput.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/memory/chatCompact.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/afterConfirm.ts", "contains": "QUESTION-TARGET-AFTER-TUCK (2026-11-25)" },
+        { "file": "src/lib/Others/ChatList.svelte", "contains": "// QUESTION-TARGET-AFTER-TUCK (2026-11-25)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/afterConfirm.test.ts",
+        "src/ts/process/memory/chatCompact.test.ts"
+      ]
+    },
+    {
       "id": "CHAT-BODY-MORPH",
       "title": "메시지 본문은 바뀐 부분만 고침 (패널 스크롤·펼침 유지, 표시 설정 토글)",
       "criticality": "core-ux",
@@ -1976,8 +2008,8 @@
         { "file": "src/ts/storage/chatDraft.ts", "contains": "export function composerDraft() {" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "composer.flush(draftChaId, draftChatId, { m: messageInput, t: messageInputTranslate })" },
         { "file": "src/ts/storage/chatDraft.ts", "contains": "export function copyChatDraft(chaId: string, fromChatId: string, toChatId: string): void" },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)" },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)" }
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "copyChatDraft((chara as character).chaId, chara.chats[hydratedIdx].id, newChat.id)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const hydratedIdx = chatIndexAfterConfirm(chara.chats, target)" }
       ],
       "regressionTests": [
         "src/ts/storage/chatDraft.test.ts"
@@ -2018,7 +2050,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/generationConcurrency.ts", "contains": "maxConcurrentChats: Number.POSITIVE_INFINITY," },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const newChat = reissueMessageIds(copied.chat, chara.chats[i].message.map(m => m.chatId))" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const newChat = reissueMessageIds(copied.chat, chara.chats[hydratedIdx].message.map(m => m.chatId))" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if(!continueResponse) endSendTurn = beginSendTurn(activeChat, capturedInput, capturedTranslate, v4)" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "copy.message = messagesWithoutPendingReply(copy.message, pendingGenerationId, placeholder)" },
@@ -2028,16 +2060,16 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (!continueResponse) markSendGenerationStarted(activeChat.id)" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const input = chatForCopyWhileAnswering(snapshot, {" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "if (restored) restoreShownSwipeScriptstate(copy, restored)" },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(i + 1, 0, newChat)" },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "newChat.folderId = folderForChatCopy(chara, chara.chats[chatIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)" },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "newChat.folderId = folderForChatCopy(chara, chara.chats[i], newChat.message.length, DBState.db.createFolderOnBranch, v4)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(hydratedIdx + 1, 0, newChat)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "newChat.folderId = folderForChatCopy(chara, chara.chats[hydratedIdx], newChat.message.length, DBState.db.createFolderOnBranch, v4)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "if(owner !== chara) return" },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "export function folderForChatCopy(" },
         { "file": "src/ts/chatBranchFolder.test.ts", "contains": "describe('folderForChatCopy', () => {" },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "if (sourceFolder?.nodeOnlyCopyPoint?.messages === messages) return sourceFolder.id" },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "nodeOnlyCopyPoint: { chatId: source.id ?? '', messages }," },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "COPY-FOLDER-TOGETHER (2026-11-23)" },
         { "file": "src/ts/chatBranchFolder.ts", "contains": "if (sourceFolder && !sourceFolder.nodeOnlyCopyPoint) return sourceFolder.id" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const folderId = folderForChatCopy(DBState.db.characters[view.characterIndex], currentChat, idx + 1, DBState.db.createFolderOnBranch, v4)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const folderId = folderForChatCopy(currentOwner, currentChat, at + 1, DBState.db.createFolderOnBranch, v4)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "newChat.folderId = folderId" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyCopyPoint?: { chatId: string, messages: number }" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const snapshot = clearReplyInProgress($state.snapshot(chat) as Chat)" },

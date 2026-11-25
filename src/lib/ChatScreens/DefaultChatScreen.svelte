@@ -679,7 +679,7 @@ import { isMobile } from 'src/ts/platform'
 
     // CHAT-COMPACT (2026-11-23): intercept before any send side effect or message insertion.
     let compactRunning = false
-    async function runCompact(focusNote = '') {
+    async function runCompact(focusNote = '', onAccepted?: () => void) {
         const char = DBState.db.characters[view.characterIndex]
         const chat = char?.chats?.[view.chatIndex]
         const reason = compactGuardReason(!!char && !!chat && currentChatReady,
@@ -687,18 +687,21 @@ import { isMobile } from 'src/ts/platform'
             !!char && !!chat && !!getActiveHypaV3Preset(DBState.db, char, chat))
         if (reason) {
             notifyInfo(reason === 'noChat' ? language.chatCompactNoChat : reason === 'busy' ? language.chatCompactBusy : language.chatCompactNoMemory)
-            return
+            return { accepted: false, succeeded: false }
         }
-        if (!char || !chat) return
+        if (!char || !chat) return { accepted: false, succeeded: false }
         compactRunning = true
+        onAccepted?.()
         try {
             const result = await compactChat(char, chat, DBState.db.nodeOnlyChatCompactMode ?? 'count',
                 DBState.db.nodeOnlyChatCompactKeep ?? 6, focusNote)
             if (result === 'empty') notifyInfo(language.chatCompactEmpty)
             else { void requestImmediateSave(); notifySuccess(language.chatCompactDone) }
+            return { accepted: true, succeeded: true }
         } catch (error) {
             void requestImmediateSave()
             alertError(`[HypaV3] ${error}`)
+            return { accepted: true, succeeded: false }
         } finally {
             compactRunning = false
         }
@@ -708,8 +711,9 @@ import { isMobile } from 'src/ts/platform'
         if (!continueResponse) {
             const focusNote = compactCommand(messageInput)
             if (focusNote !== null) {
-                messageInput = ''
-                await runCompact(focusNote)
+                const command = messageInput
+                const result = await runCompact(focusNote, () => { messageInput = '' })
+                if (result.accepted && !result.succeeded && !messageInput) messageInput = command
                 return
             }
         }

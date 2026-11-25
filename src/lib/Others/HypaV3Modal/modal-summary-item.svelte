@@ -23,6 +23,7 @@
   import { type Message } from "src/ts/storage/database.svelte";
   import { translateHTML } from "src/ts/translator/translator";
   import { alertConfirm } from "src/ts/alert";
+  import { itemIndexAfterConfirm } from "src/ts/gui/afterConfirm";
   import { DBState, selectedCharID } from "src/ts/stores.svelte";
   import type {
     SummaryItemState,
@@ -216,21 +217,31 @@
   }
 
   async function deleteThis(): Promise<void> {
+    const owner = hypaV3Data;
+    const target = owner.summaries[summaryIndex];
+    if (!target) return;
     if (await alertConfirm(language.hypaV3Modal.deleteThisConfirmMessage)) {
-      hypaV3Data.summaries = hypaV3Data.summaries.filter(
-        (_, i) => i !== summaryIndex
+      const at = itemIndexAfterConfirm(owner.summaries, target);
+      if (at < 0) return;
+      owner.summaries = owner.summaries.filter(
+        (_, i) => i !== at
       );
     }
   }
 
   async function deleteAfter(): Promise<void> {
+    const owner = hypaV3Data;
+    const target = owner.summaries[summaryIndex];
+    if (!target) return;
     if (
       await alertConfirmTwice(
         language.hypaV3Modal.deleteAfterConfirmMessage,
         language.hypaV3Modal.deleteAfterConfirmSecondMessage
       )
     ) {
-      hypaV3Data.summaries.splice(summaryIndex + 1);
+      const at = itemIndexAfterConfirm(owner.summaries, target);
+      if (at < 0) return;
+      owner.summaries.splice(at + 1);
     }
   }
 
