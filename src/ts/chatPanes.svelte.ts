@@ -34,6 +34,16 @@ export interface PaneView {
 const SIDE_KEY = 'pocketrisu:split-chat:side'
 const MAIN_KEY = 'pocketrisu:split-chat:main'
 const ACTIVE_KEY = 'pocketrisu:split-chat:active'
+const HOME_KEY = 'pocketrisu:split-chat:home'
+
+function readHome(): Record<PaneId, boolean> {
+    try {
+        const value = JSON.parse(localStorage.getItem(HOME_KEY) ?? 'null')
+        return { main: value?.main === true, side: value?.side === true }
+    } catch {
+        return { main: false, side: false }
+    }
+}
 
 function readIds(key: string): PaneChatIds | null {
     try {
@@ -69,6 +79,8 @@ function readActive(): PaneId {
 export const paneState = $state({
     active: readActive() as PaneId,
     held: { main: readIds(MAIN_KEY), side: readIds(SIDE_KEY) } as Record<PaneId, PaneChatIds | null>,
+    // SPLIT-PANE-HOME (2026-11-25): Home belongs to the pane the user touched.
+    home: readHome(),
 })
 
 const TOGGLES_KEY = 'pocketrisu:split-chat:toggles'
@@ -117,6 +129,7 @@ export function persistPanes(): void {
     }
     try {
         localStorage.setItem(ACTIVE_KEY, paneState.active)
+        localStorage.setItem(HOME_KEY, JSON.stringify(paneState.home))
         localStorage.setItem(TOGGLES_KEY, JSON.stringify(paneToggles))
     } catch {
         // best effort
@@ -247,8 +260,10 @@ export function startPaneSync(): () => void {
             const ids = selectedChatIds()
             if (!ids) return
             untrack(() => {
+                const wasHome = paneState.home[paneState.active]
                 const held = paneState.held[paneState.active]
-                if (held?.chaId === ids.chaId && held.chatId === ids.chatId) return
+                if (!wasHome && held?.chaId === ids.chaId && held.chatId === ids.chatId) return
+                paneState.home[paneState.active] = false
                 paneState.held[paneState.active] = ids
                 persistPanes()
             })

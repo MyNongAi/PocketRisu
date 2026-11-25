@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get, writable } from 'svelte/store'
+import { flushSync } from 'svelte'
 
 const db = {
     characters: [
@@ -39,8 +40,8 @@ vi.mock('./storage/database.svelte', () => ({
 }))
 vi.mock('./storage/chatStorage', () => ({ ensureChatHydrated: vi.fn(async (): Promise<unknown> => null) }))
 
-const { chatsShownBesideSelection, locateChat, mainPaneView, paneState, paneToggles, selectionPaneView, shownBesideSelection, sidePaneView } = await import('./chatPanes.svelte')
-const { activatePane, applySelectedChatToggles, restorePanesAfterBoot, returnToMainPane, showInSidePane, swapPanes } = await import('./paneActivation')
+const { chatsShownBesideSelection, locateChat, mainPaneView, paneState, paneToggles, selectionPaneView, shownBesideSelection, sidePaneView, startPaneSync } = await import('./chatPanes.svelte')
+const { activatePane, applySelectedChatToggles, restorePanesAfterBoot, returnToMainPane, sendActivePaneHome, showInSidePane, swapPanes } = await import('./paneActivation')
 const { splitLayout } = await import('./splitLayout.svelte')
 const { splitChatOpen } = await import('./chatSplitPane')
 const { ensureChatHydrated } = await import('./storage/chatStorage')
@@ -52,6 +53,7 @@ describe('the two panes of the split', () => {
         selectedCharID.set(0)
         paneState.active = 'main'
         paneState.held = { main: null, side: null }
+        paneState.home = { main: false, side: false }
         loadTogglesFromChat.mockClear()
         botMakerMode.set(false)
         QuickSettings.open = false
@@ -120,6 +122,61 @@ describe('the two panes of the split', () => {
         expect(get(selectedCharID)).toBe(-1)
         expect(paneState.held.side).toEqual({ chaId: 'a', chatId: 'a1' })
         expect(sidePaneView.chat?.id).toBe('a1')
+    })
+
+    it('Home clears only the active side pane and persists its home screen', () => {
+        showInSidePane({ chaId: 'b', chatId: 'b1' })
+        activatePane('side')
+        selectedCharID.set(-1) // Sidebar calls deselectCharacter before sendActivePaneHome.
+        sendActivePaneHome()
+        expect(paneState.held.side).toBeNull()
+        expect(paneState.home.side).toBe(true)
+        expect(paneState.held.main).toEqual({ chaId: 'a', chatId: 'a1' })
+        expect(paneState.home.main).toBe(false)
+        expect(localStorage.getItem('pocketrisu:split-chat:side')).toBeNull()
+        expect(JSON.parse(localStorage.getItem('pocketrisu:split-chat:home') ?? '{}')).toEqual({ main: false, side: true })
+
+        restorePanesAfterBoot()
+        expect(get(selectedCharID)).toBe(-1)
+        expect(paneState.home.side).toBe(true)
+    })
+
+    it('selection sync clears Home when a chat is picked in that pane', () => {
+        paneState.active = 'side'
+        paneState.home.side = true
+        selectedCharID.set(1)
+        const stop = startPaneSync()
+        try {
+            flushSync()
+            expect(paneState.held.side).toEqual({ chaId: 'b', chatId: 'b1' })
+            expect(paneState.home.side).toBe(false)
+            expect(JSON.parse(localStorage.getItem('pocketrisu:split-chat:home') ?? '{}').side).toBe(false)
+        } finally {
+            stop()
+        }
+    })
+
+    it('dropping a chat into a home pane clears its Home flag', () => {
+        paneState.home.side = true
+        expect(showInSidePane({ chaId: 'b', chatId: 'b1' })).toBe(true)
+        expect(paneState.home.side).toBe(false)
+        expect(paneState.held.side).toEqual({ chaId: 'b', chatId: 'b1' })
+    })
+
+    it('swaps Home along with the panes', () => {
+        paneState.home.side = true
+        swapPanes()
+        expect(paneState.home).toEqual({ main: true, side: false })
+        expect(JSON.parse(localStorage.getItem('pocketrisu:split-chat:home') ?? '{}')).toEqual({ main: true, side: false })
+    })
+
+    it('Home leaves pane state alone when the split is not shown', () => {
+        paneState.held.main = { chaId: 'a', chatId: 'a1' }
+        splitChatOpen.set(false)
+        sendActivePaneHome()
+        expect(paneState.held.main).toEqual({ chaId: 'a', chatId: 'a1' })
+        expect(paneState.home).toEqual({ main: false, side: false })
+        expect(localStorage.getItem('pocketrisu:split-chat:home')).toBeNull()
     })
 
     it("each pane keeps its toggles and its panel tab (the user's request, 2026-10-21)", () => {
@@ -275,6 +332,7 @@ describe('toggle values of a pane whose chat is still loading', () => {
         db.characters[1].chats[0] = { id: 'b1', message: [], _placeholder: true } as any
         paneState.active = 'main'
         paneState.held = { main: { chaId: 'a', chatId: 'a1' }, side: { chaId: 'b', chatId: 'b1' } }
+        paneState.home = { main: false, side: false }
         paneToggles.b1 = { toggle_sw: '1' }
         toggles.toggle_sw = '0'
         let resolve!: (value: unknown) => void
@@ -347,6 +405,7 @@ describe('toggle values around loads and preset bindings', () => {
         presetSwitches.length = 0
         paneState.active = 'main'
         paneState.held = { main: { chaId: 'a', chatId: 'a1' }, side: { chaId: 'b', chatId: 'b1' } }
+        paneState.home = { main: false, side: false }
     })
 
     it("after a reload, the stub's own live values are kept when another pane is touched before it loads", () => {

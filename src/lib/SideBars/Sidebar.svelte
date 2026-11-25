@@ -83,7 +83,7 @@
     import { onMount, untrack } from "svelte";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { getPaneView, paneState, paneView, setPaneContext, type PaneId } from "src/ts/chatPanes.svelte";
-    import { activatePane } from "src/ts/paneActivation";
+    import { activatePane, sendActivePaneHome } from "src/ts/paneActivation";
     import { closePaneOverlay, closePanePanel, paneWord, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
     import { hasNewMark, newMarks } from "src/ts/newMarks.svelte";
     import NewMark from "src/lib/UI/NewMark.svelte";
@@ -1775,6 +1775,7 @@
   onclick={() => {
     reseter();
     deselectCharacter()
+    sendActivePaneHome()
     PlaygroundStore.set(0)
     OpenRealmStore.set(false)
   }}
@@ -1874,6 +1875,7 @@
         onClick={() => {
           reseter();
           deselectCharacter()
+          sendActivePaneHome()
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
@@ -2346,6 +2348,7 @@
         onClick={() => {
           reseter();
           deselectCharacter()
+          sendActivePaneHome()
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>

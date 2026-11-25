@@ -80,7 +80,7 @@ import { isMobile } from 'src/ts/platform'
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
 
     import { isSendKey } from 'src/ts/gui/sendKey';
-    import { getPaneView } from 'src/ts/chatPanes.svelte';
+    import { getPaneView, paneState } from 'src/ts/chatPanes.svelte';
     import { matchesScrollRequest, type PaneScrollRequest } from 'src/ts/gui/paneRedraw';
     import { keepLabelInPane, newPaneFormId } from 'src/ts/gui/paneFormScope';
 
@@ -1870,7 +1870,7 @@ import { isMobile } from 'src/ts/platform'
             Loading...
         </div>
     {/if}
-    {#if view.pane === 'side' && !view.chat}
+    {#if view.pane === 'side' && !view.chat && !paneState.home.side}
         <div class="h-full w-full flex items-center justify-center p-6 text-center text-textcolor2">
             <span>{language.splitPaneEmpty}</span>
         </div>

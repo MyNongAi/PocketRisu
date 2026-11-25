@@ -4,12 +4,21 @@
 // reads the chat that pane shows.
 
 import { get } from 'svelte/store'
-import { botMakerMode, chatDeselected, QuickSettings, selectedCharID } from './stores.svelte'
+import { botMakerMode, chatDeselected, MobileGUI, QuickSettings, selectedCharID } from './stores.svelte'
 import { applyToggleValues, changeToPreset, getDatabase, loadTogglesFromChat, snapshotToggleValues, type Chat } from './storage/database.svelte'
 import { ensureChatHydrated } from './storage/chatStorage'
 import { locateChat, paneState, paneToggles, persistPanes, pinnedToggleValues, selectedChatIds, type PaneChatIds, type PaneId } from './chatPanes.svelte'
 import { persistSplitLayout, splitLayout, type PanelTab } from './splitLayout.svelte'
 import { markSeen } from './newMarks.svelte'
+import { isEmbeddedRisuPane, splitChatOpen } from './chatSplitPane'
+
+/** SPLIT-PANE-HOME (2026-11-25): Home clears only the active split pane. */
+export function sendActivePaneHome(): void {
+    if (!get(splitChatOpen) || isEmbeddedRisuPane || get(MobileGUI)) return
+    paneState.held[paneState.active] = null
+    paneState.home[paneState.active] = true
+    persistPanes()
+}
 
 // The character panel's tab lives in app-wide state (botMakerMode, QuickSettings);
 // each pane's panel keeps its own, so it is handed over with the selection.
@@ -118,6 +127,7 @@ function selectChat(characterIndex: number, chatIndex: number, ownLiveValues = f
     }
     const chat = char.chats?.[chatIndex]
     if (!chat) return
+    paneState.home[paneState.active] = false
     const serial = ++selectSerial
     if (chat._placeholder) {
         // What the pane kept is taken only as it is applied: a touch back
@@ -159,6 +169,7 @@ export function swapPanes(): void {
     paneState.held[active] = selectedChatIds()
     const { main, side } = paneState.held
     paneState.held = { main: side, side: main }
+    paneState.home = { main: paneState.home.side, side: paneState.home.main }
     const target = locateChat(getDatabase().characters ?? [], paneState.held[active])
     if (target) selectChat(target.characterIndex, target.chatIndex)
     else selectedCharID.set(-1)
@@ -170,6 +181,7 @@ export function showInSidePane(ids: PaneChatIds): boolean {
     const target = locateChat(getDatabase().characters ?? [], ids)
     if (!target) return false
     paneState.held.side = ids
+    paneState.home.side = false
     if (paneState.active === 'side') selectChat(target.characterIndex, target.chatIndex)
     else {
         const char = getDatabase().characters[target.characterIndex]
@@ -209,6 +221,7 @@ export function settlePanesForClosedSplit(): void {
  */
 export function restorePanesAfterBoot(): void {
     if (get(selectedCharID) >= 0) return
+    if (paneState.home[paneState.active]) return
     const ids = paneState.held[paneState.active]
     const target = locateChat(getDatabase().characters ?? [], ids)
     if (!ids || !target) return

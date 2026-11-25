@@ -560,7 +560,27 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "SPLIT-PANE-ISOLATION (2026-11-25)" }
       ],
       "regressionTests": ["src/ts/gui/paneRedraw.test.ts"]
-    },    {
+    },
+    {
+      "id": "SPLIT-PANE-HOME",
+      "title": "분할 화면: 각 칸의 홈 화면 유지",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatPanes.svelte.ts",
+        "src/ts/paneActivation.ts",
+        "src/ts/chatPanes.test.ts",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "docs/ko/custom-feature-contract.json",
+        "docs/ko/custom-feature-ledger.md"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatPanes.svelte.ts", "contains": "SPLIT-PANE-HOME (2026-11-25)" },
+        { "file": "src/ts/paneActivation.ts", "contains": "SPLIT-PANE-HOME (2026-11-25)" }
+      ],
+      "regressionTests": ["src/ts/chatPanes.test.ts"]
+    },
+    {
       "id": "RAIL-BOTLIST-TOGGLE",
       "title": "봇 목록 고정 추가 버튼과 칸별 접기",
       "criticality": "core-ux",
