@@ -114,17 +114,20 @@
       "ownerFiles": [
         "src/lib/SideBars/SideChatList.svelte",
         "src/lib/SideBars/ChatSearchResults.svelte",
+        "src/lib/SideBars/ChatSearchPopup.svelte",
         "src/ts/chatSearch.ts",
         "src/ts/gui/chatSearchSource.ts",
+        "src/ts/gui/searchPopupNav.ts",
         "src/lang/en.ts",
         "src/lang/ko.ts"
       ],
       "requiredMarkers": [
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "CHAT-SEARCH (2026-11-22)" },
+        { "file": "src/lib/SideBars/ChatSearchPopup.svelte", "contains": "CHAT-SEARCH-POPUP (2026-11-25)" },
         { "file": "src/ts/chatSearch.ts", "contains": "CHAT-SEARCH (2026-11-22)" },
         { "file": "src/ts/gui/chatSearchSource.ts", "contains": "CHAT-SEARCH (2026-11-22)" }
       ],
-      "regressionTests": ["src/ts/chatSearch.test.ts", "src/ts/gui/chatSearchSource.test.ts"]
+      "regressionTests": ["src/ts/chatSearch.test.ts", "src/ts/gui/chatSearchSource.test.ts", "src/ts/gui/searchPopupNav.test.ts"]
     },
     {
       "id": "PLUGIN-STOP-CUT",
