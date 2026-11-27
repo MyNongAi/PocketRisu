@@ -450,7 +450,11 @@
                     {:else}
                     {#each folderItemsFor(i) as item (item.kind + ':' + item.index)}
                     {#if item.kind === 'folder'}
-                        <div class="ml-2 min-w-0 border-l border-darkborderc pl-1">{@render folderRow(chara.chatFolders[item.index], item.index)}</div>
+                        <!-- CHAT-FOLDER-NESTING (2026-11-27): a child folder keeps its parent's width (the user, on a
+                             phone: each level was ~31px narrower, so deep branches showed one letter per line). It
+                             spans the parent's padding, without side or bottom borders (their ends stacked into a
+                             staircase of lines); the bar on its left grows by 2px a level. -->
+                        <div class="-mx-2 last:-mb-2 min-w-0 border-l-2 border-darkborderc [&>div]:mb-0 [&>div]:border-x-0 [&>div]:border-b-0 [&>div]:rounded-none">{@render folderRow(chara.chatFolders[item.index], item.index)}</div>
                     {:else}
                     {@const chatIdx = item.index}
                     {@const chat = chara.chats[chatIdx]}
